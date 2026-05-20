@@ -1,0 +1,158 @@
+/* --- WordMD editor styles (WYSIWYG: Milkdown + CodeMirror 6) --- */
+:root {
+  --bg: #ffffff;
+  --fg: #1f1f1f;
+  --muted: #6b6b6b;
+  --border: #e1e1e1;
+  --accent: #0078d4;
+  --selection: #b3d7ff;
+  --code-bg: #f4f4f4;
+  --code-fg: #1f1f1f;
+  --quote-border: #d0d0d0;
+  --banner-bg: #f7f7f7;
+  --highlight: #fff39a;
+  --highlight-active: #ffd54f;
+  --font-source: "Cascadia Mono", "Consolas", "Courier New", monospace;
+  --font-formatted: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-size: 14px;
+}
+
+[data-theme="dark"] {
+  --bg: #1e1e1e;
+  --fg: #e6e6e6;
+  --muted: #9a9a9a;
+  --border: #3a3a3a;
+  --accent: #4cc2ff;
+  --selection: #264f78;
+  --code-bg: #2a2a2a;
+  --code-fg: #e6e6e6;
+  --quote-border: #555;
+  --banner-bg: #2a2a2a;
+  --highlight: #6b5d00;
+  --highlight-active: #b08800;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); }
+body { font-family: var(--font-formatted); font-size: var(--font-size); }
+#app { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; position: relative; }
+
+/* --- Editor host: per-tab Doc instances stack inside; only the active is visible. --- */
+#editor-host {
+  flex: 1 1 auto; min-height: 0; overflow: hidden; position: relative;
+}
+.tab-host {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+}
+
+/* --- Front-matter banner (per tab) --- */
+.fm-banner {
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex; flex-direction: column;
+}
+.fm-banner.hidden { display: none; }
+.fm-banner .fm-summary { display: inline-block; font-weight: 600; }
+.fm-banner .fm-toggle {
+  background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 12px;
+  margin-left: 8px;
+}
+.fm-banner .fm-body {
+  margin: 6px 0 0 0; padding: 8px; background: var(--code-bg); color: var(--code-fg);
+  border-radius: 4px; font-family: var(--font-source); font-size: 12px;
+  white-space: pre; overflow: auto; max-height: 160px;
+}
+.fm-banner.collapsed .fm-body { display: none; }
+
+/* --- Editor row holds source / splitter / formatted --- */
+.editor-row { flex: 1 1 auto; display: flex; flex-direction: row; min-height: 0; }
+.pane { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; }
+
+/* CodeMirror takes the full pane height */
+.source-pane .cm-editor { height: 100%; font-family: var(--font-source); font-size: var(--font-size); }
+.source-pane .cm-scroller { font-family: var(--font-source); }
+.source-pane .cm-content { padding: 12px 14px; }
+
+/* Milkdown formatted pane */
+.formatted-pane { padding: 0; }
+.formatted-pane .milkdown {
+  padding: 16px 24px; line-height: 1.6;
+  max-width: 980px; margin: 0 auto;
+}
+.formatted-pane .milkdown .editor { outline: none; min-height: calc(100vh - 240px); }
+
+/* Mode-driven layout (per active tab) */
+.tab-host[data-mode="source"]    .formatted-pane { display: none; }
+.tab-host[data-mode="source"]    .splitter       { display: none; }
+.tab-host[data-mode="formatted"] .source-pane    { display: none; }
+.tab-host[data-mode="formatted"] .splitter       { display: none; }
+.tab-host[data-mode="split"]     .source-pane    { flex: 1 1 50%; }
+.tab-host[data-mode="split"]     .formatted-pane { flex: 1 1 50%; }
+
+/* Splitter */
+.splitter { flex: 0 0 4px; background: var(--border); cursor: col-resize; }
+.splitter:hover { background: var(--accent); }
+
+/* --- Milkdown rendered styles --- */
+.milkdown h1, .milkdown h2, .milkdown h3, .milkdown h4, .milkdown h5, .milkdown h6 {
+  font-weight: 600; line-height: 1.25; margin: 1.6em 0 0.5em;
+}
+.milkdown h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.milkdown h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.milkdown h3 { font-size: 1.25em; }
+.milkdown h4 { font-size: 1.1em; }
+.milkdown p, .milkdown ul, .milkdown ol, .milkdown blockquote, .milkdown pre, .milkdown table {
+  margin: 0.6em 0;
+}
+.milkdown a { color: var(--accent); text-decoration: none; }
+.milkdown a:hover { text-decoration: underline; }
+.milkdown code {
+  font-family: var(--font-source); background: var(--code-bg); color: var(--code-fg);
+  padding: 0.15em 0.35em; border-radius: 3px; font-size: 0.92em;
+}
+.milkdown pre {
+  background: var(--code-bg); color: var(--code-fg);
+  padding: 12px 14px; border-radius: 6px; overflow: auto;
+  font-family: var(--font-source); font-size: 0.92em; line-height: 1.5;
+}
+.milkdown pre code { background: transparent; padding: 0; border-radius: 0; font-size: inherit; }
+.milkdown blockquote {
+  border-left: 3px solid var(--quote-border); padding: 0.2em 1em; color: var(--muted); margin: 0.6em 0;
+}
+.milkdown table { border-collapse: collapse; width: 100%; }
+.milkdown th, .milkdown td { border: 1px solid var(--border); padding: 6px 10px; }
+.milkdown th { background: var(--banner-bg); }
+.milkdown hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.milkdown img { max-width: 100%; height: auto; }
+.milkdown ul, .milkdown ol { padding-left: 1.6em; }
+.milkdown input[type="checkbox"] { margin-right: 0.4em; }
+
+/* --- Find bar --- */
+#find-bar {
+  position: absolute; top: 8px; right: 16px; z-index: 100;
+  display: flex; gap: 4px; align-items: center;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  font-size: 12px;
+}
+#find-bar.hidden { display: none; }
+#find-bar input[type="text"] {
+  border: 1px solid var(--border); background: var(--bg); color: var(--fg);
+  padding: 4px 6px; border-radius: 3px; font-size: 12px; width: 160px; outline: none;
+}
+#find-bar input[type="text"]:focus { border-color: var(--accent); }
+#find-bar button {
+  background: transparent; border: none; color: var(--fg); cursor: pointer;
+  padding: 4px 6px; border-radius: 3px;
+}
+#find-bar button:hover { background: var(--banner-bg); }
+#find-bar .opt {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted);
+  border: 1px solid transparent; padding: 1px 4px; border-radius: 3px;
+}
+#find-bar .opt input { margin: 0 2px 0 0; }
+#find-bar .count { color: var(--muted); margin: 0 4px; min-width: 50px; text-align: center; }

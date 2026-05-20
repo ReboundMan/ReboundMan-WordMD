@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "WordMD (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "WordMD (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

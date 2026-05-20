@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WordMD Editor</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https: file:;">
+<link rel="stylesheet" href="editor.css">
+</head>
+<body data-mode="formatted" data-theme="light">
+<div id="app">
+  <div id="editor-host"></div>
+  <div id="find-bar" class="hidden">
+    <input id="find-input" type="text" placeholder="Find" />
+    <input id="replace-input" type="text" placeholder="Replace" class="hidden" />
+    <label class="opt"><input type="checkbox" id="opt-case"> Aa</label>
+    <label class="opt"><input type="checkbox" id="opt-word"> W</label>
+    <label class="opt"><input type="checkbox" id="opt-regex"> .*</label>
+    <span id="find-count" class="count">0 / 0</span>
+    <button id="find-prev" title="Previous (Shift+Enter)">◀</button>
+    <button id="find-next" title="Next (Enter)">▶</button>
+    <button id="replace-one" class="hidden" title="Replace">↻</button>
+    <button id="replace-all" class="hidden" title="Replace all">⇶</button>
+    <button id="find-close" title="Close (Esc)">✕</button>
+  </div>
+</div>
+<script src="editor.js"></script>
+</body>
+</html>

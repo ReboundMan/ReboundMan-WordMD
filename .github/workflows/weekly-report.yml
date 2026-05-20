@@ -1,0 +1,135 @@
+name: Weekly feedback report
+
+on:
+  schedule:
+    # Sundays at 16:00 UTC ~ 9:00 PT
+    - cron: "0 16 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: read
+  discussions: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Generate weekly report
+        id: gen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '7 days ago' +'%Y-%m-%dT%H:%M:%SZ')
+          year=$(date -u +'%Y')
+          week=$(date -u +'%V')
+          outdir="reports"
+          mkdir -p "$outdir"
+          out="$outdir/weekly-$year-W$week.md"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+          echo "year=$year" >> "$GITHUB_OUTPUT"
+          echo "week=$week" >> "$GITHUB_OUTPUT"
+
+          fetch() {
+            local label="$1" state="$2"
+            gh issue list --repo "$REPO" --state "$state" --label "$label" --search "updated:>=$since" \
+              --limit 200 \
+              --json number,title,url,state,labels,createdAt,updatedAt,closedAt,author \
+              || echo "[]"
+          }
+
+          declare -A CATS=( ["bug"]="🐞 Bugs" ["feature"]="✨ Feature requests" ["ux"]="🎨 UX / polish" ["performance"]="⚡ Performance" ["docs"]="📝 Docs / install" ["other"]="❓ Other" )
+
+          {
+            echo "# WordMD weekly feedback — $year week $week"
+            echo
+            echo "_Window: last 7 days (issues created, updated, or closed since \`$since\`)._"
+            echo
+            echo "_Generated automatically by \`.github/workflows/weekly-report.yml\`._"
+            echo
+
+            # Headline counters across all feedback in the window
+            all=$(gh issue list --repo "$REPO" --state all --label feedback --search "updated:>=$since" --limit 500 --json state,labels,number)
+            opened=$(echo "$all" | jq '[.[] | select(.state=="OPEN")] | length')
+            closed=$(echo "$all" | jq '[.[] | select(.state=="CLOSED")] | length')
+            total=$(echo "$all" | jq 'length')
+            echo "**Totals this week:** $total touched · $opened open · $closed closed"
+            echo
+
+            for cat in bug feature ux performance docs other; do
+              title="${CATS[$cat]}"
+              open_items=$(fetch "$cat" "open")
+              closed_items=$(fetch "$cat" "closed")
+              open_count=$(echo "$open_items" | jq 'length')
+              closed_count=$(echo "$closed_items" | jq 'length')
+              if [ "$open_count" = "0" ] && [ "$closed_count" = "0" ]; then continue; fi
+              echo "## $title"
+              echo
+              echo "_$open_count open · $closed_count closed this week_"
+              echo
+              if [ "$open_count" != "0" ]; then
+                echo "### Open"
+                echo "$open_items" | jq -r '.[] | "- [#\(.number)](\(.url)) \(.title) — _by @\(.author.login), updated \(.updatedAt[0:10])_"'
+                echo
+              fi
+              if [ "$closed_count" != "0" ]; then
+                echo "### Closed"
+                echo "$closed_items" | jq -r '.[] | "- ~~[#\(.number)](\(.url)) \(.title)~~ — _closed \(.closedAt[0:10])_"'
+                echo
+              fi
+            done
+
+            # Anything labeled feedback but not yet categorized
+            uncat=$(gh issue list --repo "$REPO" --state all --label feedback --search "updated:>=$since -label:bug -label:feature -label:ux -label:performance -label:docs -label:other" --limit 100 --json number,title,url,state,createdAt 2>/dev/null || echo "[]")
+            uncat_count=$(echo "$uncat" | jq 'length')
+            if [ "$uncat_count" != "0" ]; then
+              echo "## 🏷️ Needs a category"
+              echo
+              echo "$uncat" | jq -r '.[] | "- [#\(.number)](\(.url)) \(.title) — _\(.state | ascii_downcase), created \(.createdAt[0:10])_"'
+              echo
+            fi
+          } > "$out"
+
+          echo "---- report preview ----"
+          head -40 "$out"
+
+      - name: Commit report
+        env:
+          OUT: ${{ steps.gen.outputs.out }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$OUT"
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git commit -m "Weekly feedback report: ${{ steps.gen.outputs.year }} W${{ steps.gen.outputs.week }}"
+          git push
+
+      - name: Post Discussion (best-effort)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OUT: ${{ steps.gen.outputs.out }}
+          YEAR: ${{ steps.gen.outputs.year }}
+          WEEK: ${{ steps.gen.outputs.week }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # Repo Discussions must be enabled. If not, this step soft-fails.
+          repo_id=$(gh api graphql -f query='query($o:String!,$r:String!){repository(owner:$o,name:$r){id discussionCategories(first:20){nodes{id name}}}}' -F o=${{ github.repository_owner }} -F r=$(basename "$REPO") --jq .)
+          rid=$(echo "$repo_id" | jq -r '.data.repository.id')
+          cat=$(echo "$repo_id" | jq -r '.data.repository.discussionCategories.nodes[] | select(.name|test("General|Announcements";"i")) | .id' | head -1)
+          if [ -z "$rid" ] || [ "$rid" = "null" ] || [ -z "$cat" ]; then
+            echo "Discussions not enabled or no suitable category — skipping."
+            exit 0
+          fi
+          body=$(printf 'Weekly WordMD feedback summary for **%s week %s**.\n\nFull report: [%s](../blob/main/%s)\n\n---\n\n%s' "$YEAR" "$WEEK" "$OUT" "$OUT" "$(cat "$OUT")")
+          gh api graphql -f query='mutation($r:ID!,$c:ID!,$t:String!,$b:String!){createDiscussion(input:{repositoryId:$r,categoryId:$c,title:$t,body:$b}){discussion{url}}}' \
+            -F r="$rid" -F c="$cat" -F t="WordMD feedback — $YEAR W$WEEK" -F b="$body" || true
