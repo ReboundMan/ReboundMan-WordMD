@@ -128,15 +128,36 @@ public static class Program
             var trimmed = cmd.Trim();
             if (trimmed.Length >= 2 && trimmed.StartsWith("\"") && trimmed.EndsWith("\""))
                 trimmed = trimmed.Substring(1, trimmed.Length - 2);
-            if (File.Exists(trimmed)) return trimmed;
+            if (File.Exists(trimmed) && !IsCurrentProcessExecutable(trimmed)) return trimmed;
 
+            // Unpackaged WinUI launch activations frequently deliver the entire
+            // command line (including argv[0] = our own exe) in Arguments. If we
+            // returned the first existing path blindly we'd open WordMD.exe as a
+            // "markdown" file, which is exactly what we don't want.
             foreach (var token in SplitCommandLine(cmd))
             {
+                if (IsCurrentProcessExecutable(token)) continue;
                 if (File.Exists(token)) return token;
             }
         }
         catch { }
         return null;
+    }
+
+    private static string? _currentExePath;
+    private static bool IsCurrentProcessExecutable(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            _currentExePath ??= System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrEmpty(_currentExePath)) return false;
+            return string.Equals(
+                Path.GetFullPath(path),
+                Path.GetFullPath(_currentExePath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     private static IEnumerable<string> SplitCommandLine(string cmd)
