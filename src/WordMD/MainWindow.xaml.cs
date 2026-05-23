@@ -197,6 +197,12 @@ public sealed partial class MainWindow : Window
                 case "cursorChanged":
                     // optional: surface line/col
                     break;
+                case "hostCommand":
+                {
+                    var cmd = payload.TryGetProperty("command", out var c) ? c.GetString() : null;
+                    if (!string.IsNullOrEmpty(cmd)) HandleHostCommand(cmd);
+                    break;
+                }
             }
         }
         catch (Exception ex)
@@ -213,6 +219,37 @@ public sealed partial class MainWindow : Window
         var envelope = new JsonObject { ["type"] = type };
         if (payload != null) envelope["payload"] = payload;
         EditorView.CoreWebView2.PostWebMessageAsJson(envelope.ToJsonString());
+    }
+
+    // ---- Keyboard shortcuts from the WebView editor ----
+    // When focus is in the WebView2 (which is virtually always, since it hosts
+    // the editor surface), keyboard input is consumed by Edge before WinUI's
+    // MenuFlyoutItem KeyboardAccelerator infrastructure ever sees it -- so the
+    // XAML accelerators (Ctrl+S etc.) silently don't fire. The bundled web
+    // editor installs a global keydown listener that forwards file-level
+    // shortcuts to the host as a "hostCommand" message, routed below to the
+    // existing menu handlers.
+    private void HandleHostCommand(string command)
+    {
+        // Dispatch instead of invoking inline so we don't run host UI work
+        // (file pickers, ContentDialogs) inside the WebView2 message callback.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            switch (command)
+            {
+                case "save":      MenuSave_Click(this, null!); break;
+                case "saveAs":    MenuSaveAs_Click(this, null!); break;
+                case "new":       MenuNew_Click(this, null!); break;
+                case "open":      MenuOpen_Click(this, null!); break;
+                case "newTab":    MenuNewTab_Click(this, null!); break;
+                case "closeTab":  MenuCloseTab_Click(this, null!); break;
+                case "find":      MenuFind_Click(this, null!); break;
+                case "replace":   MenuReplace_Click(this, null!); break;
+                case "reload":    MenuReload_Click(this, null!); break;
+                case "userGuide": MenuUserGuide_Click(this, null!); break;
+                case "feedback":  MenuFeedback_Click(this, null!); break;
+            }
+        });
     }
 
     private void PostMode(string mode) => Post("setMode", new JsonObject { ["mode"] = mode });
@@ -421,6 +458,10 @@ public sealed partial class MainWindow : Window
     {
         if (_activeTab == null) return false;
         var tab = _activeTab;
+        // Reentrancy guard: ignore overlapping save requests (e.g. Ctrl+S key
+        // repeat, double menu clicks). Returning false here keeps the caller's
+        // contract intact without firing a second writer at the same file.
+        if (tab.IsSaving) return false;
         var path = tab.FilePath;
         if (saveAs || string.IsNullOrEmpty(path))
         {
@@ -434,6 +475,11 @@ public sealed partial class MainWindow : Window
             path = file.Path;
         }
         var text = await RequestDocumentTextAsync();
+        // Mark the tab as saving BEFORE the write so the FileSystemWatcher
+        // events fired during the write don't trip the "file changed on disk"
+        // prompt against our own save. Cleared in finally only after the
+        // post-save timestamp/size have been refreshed on the tab.
+        tab.IsSaving = true;
         try
         {
             await File.WriteAllTextAsync(path!, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -465,6 +511,10 @@ public sealed partial class MainWindow : Window
         {
             await ShowErrorAsync("Save failed", ex.Message);
             return false;
+        }
+        finally
+        {
+            tab.IsSaving = false;
         }
     }
 
@@ -1024,6 +1074,11 @@ public sealed partial class MainWindow : Window
         {
             try
             {
+                // Skip while we're writing this file ourselves -- the watcher
+                // will fire one or more Changed events during our save, and we
+                // don't want to prompt the user about their own in-progress
+                // save (which would offer to "Reload" and discard their edits).
+                if (tab.IsSaving) return;
                 if (string.IsNullOrEmpty(tab.FilePath) || !File.Exists(tab.FilePath)) return;
                 var fi = new FileInfo(tab.FilePath);
                 if (fi.LastWriteTimeUtc <= tab.LastWriteTimeUtc.AddMilliseconds(50) && fi.Length == tab.LastSize)

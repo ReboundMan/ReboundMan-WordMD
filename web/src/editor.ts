@@ -294,5 +294,57 @@ replaceInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") closeFind();
 });
 
+// ---- Host keyboard shortcuts ----
+// WebView2 swallows key input before WinUI's MenuFlyoutItem KeyboardAccelerators
+// can fire, so app-level shortcuts (Ctrl+S etc.) never reach the host's File
+// menu. We capture them here at the window level and forward to the host as
+// "hostCommand" messages. The host routes each command to its existing menu
+// handler. Editor-internal shortcuts (Ctrl+B/I, Ctrl+Z/Y, Mod-z undo, etc.)
+// are left alone -- we only intercept the file/window-level set, and only when
+// the find bar doesn't have focus.
+function isInFindBar(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return !!target.closest("#find-bar");
+}
+
+window.addEventListener("keydown", (ev) => {
+  // Find bar has its own handlers (Enter, Esc, etc.) -- don't claim keys
+  // while the user is typing a search query or replacement.
+  if (isInFindBar(ev.target)) return;
+  if (ev.altKey) return;
+
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  const shift = ev.shiftKey;
+  const key = ev.key;
+  let command: string | null = null;
+
+  if (ctrl && !shift) {
+    switch (key.toLowerCase()) {
+      case "s": command = "save"; break;
+      case "n": command = "new"; break;
+      case "o": command = "open"; break;
+      case "t": command = "newTab"; break;
+      case "w": command = "closeTab"; break;
+      case "f": command = "find"; break;
+      case "h": command = "replace"; break;
+    }
+  } else if (ctrl && shift) {
+    // ev.key for Ctrl+Shift+S is "S" (uppercase) -- compare case-insensitively.
+    switch (key.toLowerCase()) {
+      case "s": command = "saveAs"; break;
+    }
+    if (key === "F1") command = "feedback";
+  } else if (!ctrl && !shift) {
+    if (key === "F5") command = "reload";
+    else if (key === "F1") command = "userGuide";
+  }
+
+  if (command) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    post("hostCommand", { command });
+  }
+}, true /* capture, so we beat the editor's own keymaps */);
+
 // ---- Ready ----
 post("editorReady", {});

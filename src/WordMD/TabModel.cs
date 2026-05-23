@@ -11,6 +11,10 @@ public sealed class TabModel
     public string? FilePath { get; set; }
     public string DisplayName { get; set; } = "Untitled.md";
     public bool IsDirty { get; set; }
+    /// <summary>True while a host-initiated save is writing this tab's file.
+    /// The external-change watcher checks this to avoid prompting the user
+    /// about their own in-progress save.</summary>
+    public bool IsSaving { get; set; }
     public string LineEnding { get; set; } = "\r\n";
     public string Encoding { get; set; } = "UTF-8";
 
