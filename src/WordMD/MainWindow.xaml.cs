@@ -1010,7 +1010,7 @@ public sealed partial class MainWindow : Window
 
     private async void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
-        await ShowErrorAsync("About WordMD", "WordMD (Dr Word) v1.4.4\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
+        await ShowErrorAsync("About WordMD", "WordMD (Dr Word) v1.4.5\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)

@@ -5,7 +5,7 @@
 ; ==========================================================================
 
 #define MyAppName       "WordMD"
-#define MyAppVersion    "1.4.4"
+#define MyAppVersion    "1.4.5"
 #define MyAppPublisher  "ReboundMan"
 #define MyAppURL        "https://github.com/ReboundMan/ReboundMan-WordMD"
 #define MyAppExeName    "WordMD.exe"
@@ -68,4 +68,9 @@ Root: HKA; Subkey: "Software\Classes\.md\OpenWithProgids";       ValueType: stri
 Root: HKA; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: string; ValueName: "WordMD.MarkdownDocument"; ValueData: ""; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch WordMD"; Flags: nowait postinstall skipifsilent
+; shellexec: launch via ShellExecuteEx instead of CreateProcess so SmartScreen / Defender
+;            real-time scan locks on the freshly-extracted exe don't surface as "code 5".
+; runasoriginaluser: drop elevation if the installer was launched elevated (e.g. user clicked
+;            "More info > Run anyway" on the SmartScreen prompt) so the launched app inherits
+;            the original interactive user's token.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch WordMD"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
