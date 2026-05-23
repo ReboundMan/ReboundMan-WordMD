@@ -94,10 +94,17 @@ on("loadDocument", (p: { text?: string; lineEnding?: string }) => {
   docs.set(activeDocId, fresh);
 });
 
-on("getDocument", (p: { requestId?: string }) => {
-  const d = activeDoc();
-  const text = d ? d.getDocumentText() : "";
-  post("documentText", { requestId: p?.requestId, docId: activeDocId, text });
+on("getDocument", (p: { requestId?: string; docId?: string }) => {
+  // Honor an explicit docId from the host so a tab switch between request
+  // and response can't cause us to return the wrong document's text. Falls
+  // back to the active doc when the host doesn't pin a docId (legacy path).
+  const targetId = p?.docId ?? activeDocId;
+  const d = targetId ? docs.get(targetId) : undefined;
+  if (!d) {
+    post("documentText", { requestId: p?.requestId, docId: null, text: null });
+    return;
+  }
+  post("documentText", { requestId: p?.requestId, docId: d.docId, text: d.getDocumentText() });
 });
 
 on("applyFormat", (p: FormatPayload) => {

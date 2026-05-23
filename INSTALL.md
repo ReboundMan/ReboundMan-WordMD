@@ -4,7 +4,7 @@ WordMD ships as a self-contained Windows installer. No external runtime install 
 
 ## Installer
 
-1. Download `WordMD-Setup-1.0.0.exe` from the `dist/` folder (or the GitHub release).
+1. Download `WordMD-Setup-<version>.exe` (e.g. `WordMD-Setup-1.4.4.exe`) from the GitHub release.
 2. Double-click and follow the prompts.
 3. Optional checkboxes during setup:
    - **Create a desktop shortcut**
@@ -28,16 +28,18 @@ User settings live in `%APPDATA%\WordMD\settings.json` and recovery snapshots in
 ## Building the installer from source
 
 ```powershell
-# 1. Publish a self-contained release build
+# 1. Publish a self-contained release build.
+#    NOTE: do NOT pass `-p:Platform=x64` -- that would land output at
+#    bin\x64\Release\... but the Inno Setup script reads from bin\Release\...
 cd src\WordMD
-dotnet publish -c Release -r win-x64 -p:Platform=x64 `
+dotnet publish -c Release -r win-x64 `
                -p:WindowsAppSDKSelfContained=true `
                -p:SelfContained=true `
                -p:PublishTrimmed=false
 
 # 2. Compile the Inno Setup installer
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" ..\..\installer\WordMD.iss
-# Output: dist\WordMD-Setup-1.0.0.exe
+# Output: dist\WordMD-Setup-<version>.exe  (version is set in installer\WordMD.iss)
 ```
 
 Prerequisites:

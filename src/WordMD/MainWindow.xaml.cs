@@ -34,11 +34,14 @@ public sealed partial class MainWindow : Window
     private TelemetryService _telemetry = null!;
     private System.Threading.Timer? _autosaveTimer;
 
-    // Pending operation hook: when JS returns documentText for the active doc.
+    // Pending operation hook: when JS returns documentText for a doc.
     // Each request gets a unique id so concurrent autosave + user-save can't
-    // overwrite each other's completion source.
-    private readonly Dictionary<string, TaskCompletionSource<string>> _pendingDocumentRequests = new();
+    // overwrite each other's completion source. We also remember the docId we
+    // asked for so a stale response (e.g. after a tab switch) can be detected.
+    private readonly Dictionary<string, PendingDocumentRequest> _pendingDocumentRequests = new();
     private long _nextRequestId;
+
+    private sealed record PendingDocumentRequest(TaskCompletionSource<string?> Tcs, string ExpectedDocId);
 
     public MainWindow()
     {
@@ -186,11 +189,21 @@ public sealed partial class MainWindow : Window
                 case "documentText":
                 {
                     var rid = payload.TryGetProperty("requestId", out var rr) ? rr.GetString() : null;
-                    var text = payload.TryGetProperty("text", out var t) ? (t.GetString() ?? "") : "";
-                    if (rid != null && _pendingDocumentRequests.TryGetValue(rid, out var tcs))
+                    var respDocId = payload.TryGetProperty("docId", out var rd) && rd.ValueKind == JsonValueKind.String
+                        ? rd.GetString() : null;
+                    var text = payload.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String
+                        ? t.GetString() : null;
+                    if (rid != null && _pendingDocumentRequests.TryGetValue(rid, out var entry))
                     {
                         _pendingDocumentRequests.Remove(rid);
-                        tcs.TrySetResult(text);
+                        // If the JS side returned text for a different doc than the one we
+                        // asked about (or none at all because the doc no longer exists),
+                        // surface null so the caller can abort rather than write empty
+                        // text to the wrong file.
+                        if (respDocId != entry.ExpectedDocId || text == null)
+                            entry.Tcs.TrySetResult(null);
+                        else
+                            entry.Tcs.TrySetResult(text);
                     }
                     break;
                 }
@@ -227,27 +240,40 @@ public sealed partial class MainWindow : Window
     // MenuFlyoutItem KeyboardAccelerator infrastructure ever sees it -- so the
     // XAML accelerators (Ctrl+S etc.) silently don't fire. The bundled web
     // editor installs a global keydown listener that forwards file-level
-    // shortcuts to the host as a "hostCommand" message, routed below to the
-    // existing menu handlers.
+    // shortcuts to the host as a "hostCommand" message, routed below to
+    // command methods that the menu handlers also call.
     private void HandleHostCommand(string command)
     {
-        // Dispatch instead of invoking inline so we don't run host UI work
-        // (file pickers, ContentDialogs) inside the WebView2 message callback.
-        DispatcherQueue.TryEnqueue(() =>
+        // Marshal to the UI thread and await directly so we can use real
+        // command methods instead of fake-event-arg menu handler invocations.
+        // Awaiting also ensures exceptions are observed via the dispatcher's
+        // unhandled-exception path rather than fire-and-forget.
+        DispatcherQueue.TryEnqueue(async () =>
         {
-            switch (command)
+            try
             {
-                case "save":      MenuSave_Click(this, null!); break;
-                case "saveAs":    MenuSaveAs_Click(this, null!); break;
-                case "new":       MenuNew_Click(this, null!); break;
-                case "open":      MenuOpen_Click(this, null!); break;
-                case "newTab":    MenuNewTab_Click(this, null!); break;
-                case "closeTab":  MenuCloseTab_Click(this, null!); break;
-                case "find":      MenuFind_Click(this, null!); break;
-                case "replace":   MenuReplace_Click(this, null!); break;
-                case "reload":    MenuReload_Click(this, null!); break;
-                case "userGuide": MenuUserGuide_Click(this, null!); break;
-                case "feedback":  MenuFeedback_Click(this, null!); break;
+                switch (command)
+                {
+                    case "save":      await SaveAsync(false); break;
+                    case "saveAs":    await SaveAsync(true); break;
+                    case "new":       NewBlankTab(); break;
+                    case "open":      await OpenViaPickerAsync(); break;
+                    case "newTab":    NewBlankTab(); break;
+                    case "closeTab":
+                        if (_activeTab != null) await CloseTabAsync(_activeTab);
+                        break;
+                    case "find":      Post("openFind", null); break;
+                    case "replace":   Post("openReplace", null); break;
+                    case "reload":
+                        if (_activeTab != null) await ReloadTabAsync(_activeTab, prompt: true);
+                        break;
+                    case "userGuide": await ShowUserGuideAsync(); break;
+                    case "feedback":  await ShowFeedbackDialogAsync(); break;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"HandleHostCommand({command}) failed: {ex.Message}");
             }
         });
     }
@@ -259,18 +285,20 @@ public sealed partial class MainWindow : Window
     private void PostLockToSource(bool enabled) => Post("setLockToSource", new JsonObject { ["enabled"] = enabled });
     private void PostFormat(JsonNode payload) => Post("applyFormat", payload);
 
-    private async Task<string> RequestDocumentTextAsync()
+    private async Task<string?> RequestDocumentTextAsync(string docId)
     {
-        if (_activeTab == null) return string.Empty;
+        if (string.IsNullOrEmpty(docId)) return null;
         var requestId = System.Threading.Interlocked.Increment(ref _nextRequestId).ToString();
-        var tcs = new TaskCompletionSource<string>();
-        _pendingDocumentRequests[requestId] = tcs;
-        Post("getDocument", new JsonObject { ["requestId"] = requestId });
+        var tcs = new TaskCompletionSource<string?>();
+        _pendingDocumentRequests[requestId] = new PendingDocumentRequest(tcs, docId);
+        Post("getDocument", new JsonObject { ["requestId"] = requestId, ["docId"] = docId });
         var done = await Task.WhenAny(tcs.Task, Task.Delay(5000));
         if (done == tcs.Task) return tcs.Task.Result;
-        // Timeout — drop the pending entry so it doesn't leak.
+        // Timeout — drop the pending entry so it doesn't leak. Returning null
+        // signals "we don't have the text" so callers don't accidentally save
+        // an empty document.
         _pendingDocumentRequests.Remove(requestId);
-        return string.Empty;
+        return null;
     }
 
     // ---- Tabs ----
@@ -364,6 +392,19 @@ public sealed partial class MainWindow : Window
         }
         // Remove from model + view
         DetachWatcher(tab);
+        // Fail any in-flight getDocument requests for this tab so callers
+        // (e.g. autosave) wake immediately with null instead of timing out.
+        var stale = _pendingDocumentRequests
+            .Where(kv => kv.Value.ExpectedDocId == tab.DocId)
+            .Select(kv => kv.Key).ToList();
+        foreach (var key in stale)
+        {
+            if (_pendingDocumentRequests.TryGetValue(key, out var entry))
+            {
+                _pendingDocumentRequests.Remove(key);
+                entry.Tcs.TrySetResult(null);
+            }
+        }
         _tabs.Remove(tab);
         if (tab.View != null) DocTabs.TabItems.Remove(tab.View);
         Post("closeDocument", new JsonObject { ["docId"] = tab.DocId });
@@ -438,7 +479,9 @@ public sealed partial class MainWindow : Window
     // ---- File operations (operate on the active tab) ----
     private void MenuNew_Click(object sender, RoutedEventArgs e) => NewBlankTab();
 
-    private async void MenuOpen_Click(object sender, RoutedEventArgs e)
+    private async void MenuOpen_Click(object sender, RoutedEventArgs e) => await OpenViaPickerAsync();
+
+    private async Task OpenViaPickerAsync()
     {
         var picker = new FileOpenPicker();
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
@@ -459,11 +502,15 @@ public sealed partial class MainWindow : Window
         if (_activeTab == null) return false;
         var tab = _activeTab;
         // Reentrancy guard: ignore overlapping save requests (e.g. Ctrl+S key
-        // repeat, double menu clicks). Returning false here keeps the caller's
-        // contract intact without firing a second writer at the same file.
+        // repeat, double menu clicks, save invoked while a previous save's
+        // document-text round-trip or file picker is in flight). Returning
+        // false here keeps the caller's contract intact without firing a
+        // second writer at the same file.
         if (tab.IsSaving) return false;
+
         var path = tab.FilePath;
-        if (saveAs || string.IsNullOrEmpty(path))
+        var hadExistingPath = !string.IsNullOrEmpty(path);
+        if (saveAs || !hadExistingPath)
         {
             var picker = new FileSavePicker();
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
@@ -474,28 +521,89 @@ public sealed partial class MainWindow : Window
             if (file == null) return false;
             path = file.Path;
         }
-        var text = await RequestDocumentTextAsync();
-        // Mark the tab as saving BEFORE the write so the FileSystemWatcher
-        // events fired during the write don't trip the "file changed on disk"
-        // prompt against our own save. Cleared in finally only after the
-        // post-save timestamp/size have been refreshed on the tab.
+
+        // Take the save lock BEFORE requesting document text so that another
+        // Ctrl+S during the round-trip can't queue a second writer. The
+        // watcher also skips events while IsSaving is set so the picker UI
+        // itself doesn't trip a spurious "file changed on disk" prompt.
         tab.IsSaving = true;
+        bool saveTimeConflictDetected = false;
         try
         {
+            var text = await RequestDocumentTextAsync(tab.DocId);
+            if (text == null)
+            {
+                await ShowErrorAsync("Save failed",
+                    "WordMD could not retrieve the current document contents from the editor. " +
+                    "Try saving again. If the problem persists, copy your text and restart.");
+                return false;
+            }
+
+            // Pre-save conflict check: re-stat the file immediately before we
+            // write. If the on-disk timestamp or size advanced since we last
+            // loaded or saved (and this is NOT a fresh Save As), warn the user
+            // so they don't silently overwrite another program's edits.
+            // Skipped for Save As (user just chose this path) and for new
+            // documents that have never been saved yet.
+            if (!saveAs && hadExistingPath && File.Exists(path!))
+            {
+                try
+                {
+                    var preFi = new FileInfo(path!);
+                    var diskAdvanced =
+                        preFi.LastWriteTimeUtc > tab.LastWriteTimeUtc.AddMilliseconds(50)
+                        || preFi.Length != tab.LastSize;
+                    if (diskAdvanced)
+                    {
+                        var preDlg = new ContentDialog
+                        {
+                            XamlRoot = RootGrid.XamlRoot,
+                            Title = "File changed on disk",
+                            Content = $"\"{Path.GetFileName(path!)}\" has been modified outside WordMD since you last opened or saved it. " +
+                                      "Overwrite the disk copy with your current editor contents?",
+                            PrimaryButtonText = "Overwrite",
+                            CloseButtonText = "Cancel",
+                        };
+                        if (await preDlg.ShowAsync() != ContentDialogResult.Primary)
+                            return false;
+                    }
+                }
+                catch { /* stat failure — let the write attempt surface the real error */ }
+            }
+
+            var bytesWritten = Encoding.UTF8.GetByteCount(text);
             await File.WriteAllTextAsync(path!, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            // Post-write conflict check: if disk's reported size disagrees
+            // with what we just wrote, another writer raced us between
+            // File.WriteAllTextAsync completion and this stat. NOTE: same-size
+            // external writes are not caught by this check and will be
+            // surfaced by the next watcher event instead.
+            FileInfo? postFi = null;
+            try { postFi = new FileInfo(path!); } catch { }
+            if (postFi != null && postFi.Length != bytesWritten)
+            {
+                saveTimeConflictDetected = true;
+                // Do NOT update LastWriteTimeUtc/LastSize to the disk's
+                // (foreign) state — that would mask the conflict from the
+                // watcher and the next save. Keep the tab marked dirty so the
+                // user knows their content is still the source of truth.
+                tab.ExternallyChanged = true;
+                SyncTabHeader(tab);
+                _telemetry.TrackEvent("file.save.conflict");
+                return true; // write itself succeeded; conflict prompt fires from finally
+            }
+
+            // Happy path: refresh fingerprint, mark clean, update menus.
             tab.FilePath = path;
             tab.DisplayName = Path.GetFileName(path!);
             tab.IsDirty = false;
             tab.ExternallyChanged = false;
-            // Refresh known on-disk timestamp/size so the watcher doesn't treat
-            // our own save as an external change.
-            try
+            if (postFi != null)
             {
-                var fi = new FileInfo(path!);
-                tab.LastWriteTimeUtc = fi.LastWriteTimeUtc;
-                tab.LastSize = fi.Length;
+                tab.LastWriteTimeUtc = postFi.LastWriteTimeUtc;
+                tab.LastSize = postFi.Length;
             }
-            catch { }
             SyncTabHeader(tab);
             StatusFile.Text = tab.DisplayName;
             _settings.AddRecent(path!);
@@ -515,7 +623,59 @@ public sealed partial class MainWindow : Window
         finally
         {
             tab.IsSaving = false;
+            if (saveTimeConflictDetected)
+            {
+                // Surface the conflict AFTER clearing IsSaving so the dialog
+                // (and any subsequent reload) interacts cleanly with the
+                // watcher. Fire-and-forget — the calling user save flow has
+                // already returned a "write succeeded" result.
+                _ = PromptSaveTimeConflictAsync(tab);
+            }
         }
+    }
+
+    /// <summary>Shown when a post-save fingerprint check detects that another
+    /// process wrote to the file during our save. Bypasses the regular
+    /// AutoReload path (which would silently discard the just-saved buffer)
+    /// and always prompts the user.</summary>
+    private async Task PromptSaveTimeConflictAsync(TabModel tab)
+    {
+        try
+        {
+            var dlg = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot,
+                Title = "File changed during save",
+                Content = $"While WordMD was saving \"{tab.DisplayName}\", another program also wrote to the file. " +
+                          "WordMD's copy in the editor still matches what you intended to save, but the disk now contains different content.\n\n" +
+                          "Reload the disk version (and lose your saved-but-overwritten content), or keep your version (and let the next save overwrite the disk copy)?",
+                PrimaryButtonText = "Reload disk version",
+                CloseButtonText = "Keep my version",
+            };
+            var r = await dlg.ShowAsync();
+            if (r == ContentDialogResult.Primary)
+            {
+                await ReloadTabAsync(tab, prompt: false);
+            }
+            else
+            {
+                // User keeps their version. Refresh the fingerprint to the
+                // current disk state so the watcher doesn't immediately
+                // re-prompt on every additional event from the same write.
+                // The next user-initiated save will overwrite disk.
+                try
+                {
+                    var fi = new FileInfo(tab.FilePath!);
+                    tab.LastWriteTimeUtc = fi.LastWriteTimeUtc;
+                    tab.LastSize = fi.Length;
+                }
+                catch { }
+                tab.ExternallyChanged = false;
+                tab.IsDirty = true; // their saved-to-disk content was overwritten — buffer is the truth again
+                SyncTabHeader(tab);
+            }
+        }
+        catch { }
     }
 
     private async void MenuExit_Click(object sender, RoutedEventArgs e)
@@ -850,7 +1010,7 @@ public sealed partial class MainWindow : Window
 
     private async void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
-        await ShowErrorAsync("About WordMD", "WordMD (Dr Word) v1.4.0\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
+        await ShowErrorAsync("About WordMD", "WordMD (Dr Word) v1.4.4\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)
@@ -894,7 +1054,9 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
-    private async void MenuUserGuide_Click(object sender, RoutedEventArgs e)
+    private async void MenuUserGuide_Click(object sender, RoutedEventArgs e) => await ShowUserGuideAsync();
+
+    private async Task ShowUserGuideAsync()
     {
         try
         {
@@ -926,7 +1088,9 @@ public sealed partial class MainWindow : Window
     // ---- Feedback / bug reporting ----
     private readonly FeedbackService _feedback = new();
 
-    private async void MenuFeedback_Click(object sender, RoutedEventArgs e)
+    private async void MenuFeedback_Click(object sender, RoutedEventArgs e) => await ShowFeedbackDialogAsync();
+
+    private async Task ShowFeedbackDialogAsync()
     {
         var categories = new[] { "bug", "feature", "ux", "performance", "docs", "other" };
         var typeCombo = new ComboBox { Width = 180 };
@@ -1069,36 +1233,64 @@ public sealed partial class MainWindow : Window
     {
         // FileSystemWatcher fires from a thread-pool thread and often fires
         // multiple events for a single save. Marshal to the UI thread and
-        // de-dupe by comparing the on-disk write time to what we last knew.
+        // coalesce: at most one handler runs per tab at a time; additional
+        // watcher events that arrive mid-handler set Pending so the handler
+        // re-evaluates once more before exiting. This prevents overlapping
+        // async work where a second handler could partially execute against
+        // half-updated tab state.
         DispatcherQueue.TryEnqueue(async () =>
         {
+            if (tab.ExternalEventRunning)
+            {
+                tab.ExternalEventPending = true;
+                return;
+            }
+            tab.ExternalEventRunning = true;
             try
             {
-                // Skip while we're writing this file ourselves -- the watcher
-                // will fire one or more Changed events during our save, and we
-                // don't want to prompt the user about their own in-progress
-                // save (which would offer to "Reload" and discard their edits).
-                if (tab.IsSaving) return;
-                if (string.IsNullOrEmpty(tab.FilePath) || !File.Exists(tab.FilePath)) return;
-                var fi = new FileInfo(tab.FilePath);
-                if (fi.LastWriteTimeUtc <= tab.LastWriteTimeUtc.AddMilliseconds(50) && fi.Length == tab.LastSize)
-                    return; // nothing actually changed since last load/save
-
-                tab.ExternallyChanged = true;
-                SyncTabHeader(tab);
-
-                if (!tab.IsDirty && _settings.AutoReloadOnExternalChange)
+                do
                 {
-                    var ok = await ReloadTabAsync(tab, prompt: false, silentOnFailure: true);
-                    if (ok && tab == _activeTab) StatusFile.Text = tab.DisplayName + "  (reloaded)";
-                }
-                else if (tab == _activeTab)
-                {
-                    await PromptExternalChangeAsync(tab);
-                }
+                    tab.ExternalEventPending = false;
+                    await ProcessExternalChangeOnceAsync(tab);
+                } while (tab.ExternalEventPending);
             }
-            catch { }
+            finally
+            {
+                tab.ExternalEventRunning = false;
+            }
         });
+    }
+
+    private async Task ProcessExternalChangeOnceAsync(TabModel tab)
+    {
+        try
+        {
+            // Skip while we're writing this file ourselves -- the watcher
+            // will fire one or more Changed events during our save, and we
+            // don't want to prompt the user about their own in-progress
+            // save (which would offer to "Reload" and discard their edits).
+            // Real external changes during a save are caught by SaveAsync's
+            // post-write fingerprint check / PromptSaveTimeConflictAsync.
+            if (tab.IsSaving) return;
+            if (string.IsNullOrEmpty(tab.FilePath) || !File.Exists(tab.FilePath)) return;
+            var fi = new FileInfo(tab.FilePath);
+            if (fi.LastWriteTimeUtc <= tab.LastWriteTimeUtc.AddMilliseconds(50) && fi.Length == tab.LastSize)
+                return; // nothing actually changed since last load/save
+
+            tab.ExternallyChanged = true;
+            SyncTabHeader(tab);
+
+            if (!tab.IsDirty && _settings.AutoReloadOnExternalChange)
+            {
+                var ok = await ReloadTabAsync(tab, prompt: false, silentOnFailure: true);
+                if (ok && tab == _activeTab) StatusFile.Text = tab.DisplayName + "  (reloaded)";
+            }
+            else if (tab == _activeTab)
+            {
+                await PromptExternalChangeAsync(tab);
+            }
+        }
+        catch { }
     }
 
     private async Task PromptExternalChangeAsync(TabModel tab)
@@ -1270,15 +1462,28 @@ public sealed partial class MainWindow : Window
     // ---- Autosave / recovery ----
     private void StartAutosaveTimer()
     {
-        _autosaveTimer = new System.Threading.Timer(async _ =>
+        // System.Threading.Timer runs on the thread pool. Marshal to the UI
+        // dispatcher before touching tab state, the pending-requests map, or
+        // the WebView -- and capture the tab/docId/recoveryKey BEFORE the
+        // async getDocument round-trip so a tab switch during the await
+        // doesn't store recovery text under the wrong file path.
+        _autosaveTimer = new System.Threading.Timer(_ =>
         {
-            try
+            DispatcherQueue.TryEnqueue(async () =>
             {
-                if (_activeTab == null || !_activeTab.IsDirty || !_editorReady) return;
-                var text = await RequestDocumentTextAsync();
-                _recovery.Save(_activeTab.FilePath ?? "untitled-" + _activeTab.DocId, text);
-            }
-            catch { }
+                try
+                {
+                    var tab = _activeTab;
+                    if (tab == null || !tab.IsDirty || !_editorReady) return;
+                    if (tab.IsSaving) return; // user save in flight — skip this tick
+                    var docId = tab.DocId;
+                    var recoveryKey = tab.FilePath ?? "untitled-" + docId;
+                    var text = await RequestDocumentTextAsync(docId);
+                    if (text == null) return;
+                    _recovery.Save(recoveryKey, text);
+                }
+                catch { }
+            });
         }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 

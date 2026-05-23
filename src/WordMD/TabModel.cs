@@ -13,8 +13,21 @@ public sealed class TabModel
     public bool IsDirty { get; set; }
     /// <summary>True while a host-initiated save is writing this tab's file.
     /// The external-change watcher checks this to avoid prompting the user
-    /// about their own in-progress save.</summary>
+    /// about their own in-progress save. Also serves as a reentrancy guard
+    /// preventing overlapping Save invocations (e.g. Ctrl+S repeat).</summary>
     public bool IsSaving { get; set; }
+
+    /// <summary>Coalescing state for OnExternalFileEvent: when true, a handler
+    /// is currently executing for this tab. Subsequent watcher events should
+    /// flip <see cref="ExternalEventPending"/> instead of starting a parallel
+    /// handler. Read/written only on the UI thread.</summary>
+    public bool ExternalEventRunning { get; set; }
+
+    /// <summary>Coalescing state for OnExternalFileEvent: set by watcher events
+    /// that arrived while a handler was already in flight. The active handler
+    /// re-runs its evaluation once before exiting when this is true. Read/written
+    /// only on the UI thread.</summary>
+    public bool ExternalEventPending { get; set; }
     public string LineEnding { get; set; } = "\r\n";
     public string Encoding { get; set; } = "UTF-8";
 
