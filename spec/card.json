@@ -1,0 +1,9 @@
+{
+  "slug": "wordmd",
+  "name": "WordMD",
+  "tagline": "A friendly, Word-like Markdown editor for Windows.",
+  "category": "desktop-app",
+  "status": "active",
+  "url": "https://github.com/ReboundMan/ReboundMan-WordMD/releases/latest",
+  "auth_family": "none-local"
+}

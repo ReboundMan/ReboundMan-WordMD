@@ -273,6 +273,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="StatusFile" Grid.Column="0" Text="Untitled.md" />
             <TextBlock x:Name="StatusWords" Grid.Column="1" Margin="12,0" Text="Words: 0" />
@@ -280,6 +281,7 @@
             <TextBlock x:Name="StatusRead"  Grid.Column="3" Margin="12,0" Text="Read: 0 min" />
             <TextBlock x:Name="StatusEol"   Grid.Column="4" Margin="12,0" Text="CRLF" />
             <TextBlock x:Name="StatusEnc"   Grid.Column="5" Margin="12,0" Text="UTF-8" />
+            <TextBlock x:Name="StatusVersion" Grid.Column="6" Margin="12,0,0,0" Opacity="0.65" Text="v1.4.5" />
         </Grid>
     </Grid>
 </Window>

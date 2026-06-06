@@ -35,3 +35,24 @@ desktop.ini
 # Local recovery / settings sandboxes
 recovery/
 settings.local.json
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Secrets, never commit
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+private/
+
+# Fleet output
+reviews/*
+!reviews/.gitkeep
