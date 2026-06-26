@@ -5,7 +5,7 @@
 ; ==========================================================================
 
 #define MyAppName       "WordMD"
-#define MyAppVersion    "1.4.5"
+#define MyAppVersion    "1.4.6"
 #define MyAppPublisher  "ReboundMan"
 #define MyAppURL        "https://github.com/ReboundMan/ReboundMan-WordMD"
 #define MyAppExeName    "WordMD.exe"
