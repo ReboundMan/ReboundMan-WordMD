@@ -60,6 +60,14 @@
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="Print..." Click="MenuPrint_Click">
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="P" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Print Formatted..." Click="MenuPrintFormatted_Click" />
+                <MenuFlyoutItem Text="Print Source..." Click="MenuPrintSource_Click" />
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="New Tab" Click="MenuNewTab_Click">
                     <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="T" />

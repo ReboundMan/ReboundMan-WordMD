@@ -269,6 +269,7 @@ public sealed partial class MainWindow : Window
                         break;
                     case "userGuide": await ShowUserGuideAsync(); break;
                     case "feedback":  await ShowFeedbackDialogAsync(); break;
+                    case "print":     PostPrint(ResolveDefaultPrintMode()); break;
                 }
             }
             catch (Exception ex)
@@ -284,6 +285,16 @@ public sealed partial class MainWindow : Window
     private void PostScrollSync(bool enabled) => Post("setScrollSync", new JsonObject { ["enabled"] = enabled });
     private void PostLockToSource(bool enabled) => Post("setLockToSource", new JsonObject { ["enabled"] = enabled });
     private void PostFormat(JsonNode payload) => Post("applyFormat", payload);
+
+    private string ResolveDefaultPrintMode() => _mode == "source" ? "source" : "formatted";
+    private void PostPrint(string mode)
+    {
+        if (!_editorReady) return;
+        Post("print", new JsonObject { ["mode"] = mode });
+    }
+    private void MenuPrint_Click(object sender, RoutedEventArgs e) => PostPrint(ResolveDefaultPrintMode());
+    private void MenuPrintFormatted_Click(object sender, RoutedEventArgs e) => PostPrint("formatted");
+    private void MenuPrintSource_Click(object sender, RoutedEventArgs e) => PostPrint("source");
 
     private async Task<string?> RequestDocumentTextAsync(string docId)
     {

@@ -6,6 +6,7 @@ import {
   cmInsert, cmInsertLink, cmInsertImage, cmInsertCodeBlock, cmInsertTable, cmClearFormatting,
 } from "./cm-commands";
 import { applyMilkdownCommand, FormatPayload } from "./mk-commands";
+import { doPrint } from "./print";
 
 const docs = new Map<string, Doc>();
 let activeDocId: string | null = null;
@@ -153,6 +154,20 @@ on("setLockToSource", (p: { enabled?: boolean }) => {
 on("openFind", () => openFind(false));
 on("openReplace", () => openFind(true));
 on("focusEditor", () => activeDoc()?.cm.focus());
+
+on("print", async (p: { mode?: string }) => {
+  const d = activeDoc();
+  if (!d) return;
+  const printMode = p?.mode === "source" ? "source" : "formatted";
+  await doPrint(printMode, {
+    getRawText: () => d.getDocumentText(),
+    getFormattedHTML: async () => {
+      d.flush();
+      await d.mk.setMarkdown(d.body);
+      return d.mk.getRenderedHTML();
+    },
+  });
+});
 
 // ---- Source-pane (CodeMirror) command implementation ----
 function applyToSourcePane(d: Doc, p: FormatPayload): void {
@@ -334,6 +349,7 @@ window.addEventListener("keydown", (ev) => {
       case "w": command = "closeTab"; break;
       case "f": command = "find"; break;
       case "h": command = "replace"; break;
+      case "p": command = "print"; break;
     }
   } else if (ctrl && shift) {
     // ev.key for Ctrl+Shift+S is "S" (uppercase) -- compare case-insensitively.

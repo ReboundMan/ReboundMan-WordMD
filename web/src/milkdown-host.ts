@@ -80,6 +80,20 @@ export class MilkdownHost {
     return out;
   }
 
+  getRenderedHTML(): string {
+    if (!this.editor) return "";
+    let html = "";
+    try {
+      this.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        html = (view.dom as HTMLElement).innerHTML;
+      });
+    } catch (err) {
+      console.error("getRenderedHTML failed", err);
+    }
+    return html;
+  }
+
   focus(): void {
     if (!this.editor) {
       // Editor still initializing; focus once it's ready.
