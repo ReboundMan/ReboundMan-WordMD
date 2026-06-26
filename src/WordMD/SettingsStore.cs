@@ -58,7 +58,12 @@ public sealed class SettingsStore
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(Path_, JsonSerializer.Serialize(this, JsonContext.Default.SettingsStore));
+            var json = JsonSerializer.Serialize(this, JsonContext.Default.SettingsStore);
+            // Atomic write: a crash mid-write must not truncate settings.json and
+            // silently reset recents/theme/telemetry on the next launch.
+            var tmp = Path_ + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, Path_, overwrite: true);
         }
         catch { }
     }

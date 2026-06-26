@@ -6,6 +6,7 @@ import {
   cmInsert, cmInsertLink, cmInsertImage, cmInsertCodeBlock, cmInsertTable, cmClearFormatting,
 } from "./cm-commands";
 import { applyMilkdownCommand, FormatPayload } from "./mk-commands";
+import { doPrint } from "./print";
 
 const docs = new Map<string, Doc>();
 let activeDocId: string | null = null;
@@ -153,6 +154,39 @@ on("setLockToSource", (p: { enabled?: boolean }) => {
 on("openFind", () => openFind(false));
 on("openReplace", () => openFind(true));
 on("focusEditor", () => activeDoc()?.cm.focus());
+
+on("print", async (p: { mode?: string; title?: string }) => {
+  const d = activeDoc();
+  if (!d) return;
+  const printMode = p?.mode === "source" ? "source" : "formatted";
+  // Empty-document guard. Source print is empty when the whole file is blank;
+  // formatted print is empty when the body is blank (front-matter renders to
+  // nothing in the formatted view), so a front-matter-only doc still counts as
+  // empty for formatted. Tell the host so it can show "Nothing to print".
+  const raw = d.getDocumentText();
+  const emptyForPrint = printMode === "source"
+    ? raw.trim().length === 0
+    : d.body.trim().length === 0;
+  if (emptyForPrint) {
+    post("hostCommand", { command: "printEmpty" });
+    return;
+  }
+  await doPrint(printMode, {
+    title: p?.title,
+    getRawText: () => raw,
+    getFormattedNode: async () => {
+      // Formatted print intentionally omits front-matter (source print includes
+      // it). Only push the canonical body into Milkdown when the formatted pane
+      // is stale (the user edited in source this session); otherwise reading the
+      // live render avoids mutating the editor's caret/scroll/selection.
+      d.flush();
+      if (d.lastEditedPane === "source") {
+        await d.mk.setMarkdown(d.body);
+      }
+      return d.mk.getRenderedNodeClone();
+    },
+  });
+});
 
 // ---- Source-pane (CodeMirror) command implementation ----
 function applyToSourcePane(d: Doc, p: FormatPayload): void {
@@ -334,6 +368,7 @@ window.addEventListener("keydown", (ev) => {
       case "w": command = "closeTab"; break;
       case "f": command = "find"; break;
       case "h": command = "replace"; break;
+      case "p": command = "print"; break;
     }
   } else if (ctrl && shift) {
     // ev.key for Ctrl+Shift+S is "S" (uppercase) -- compare case-insensitively.

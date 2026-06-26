@@ -62,6 +62,13 @@ export class Doc {
   lockToSource: boolean = true;
   private scrollSyncing: boolean = false;
   private lineToBlockCache: number[] | null = null;
+  // Derived from lineToBlockCache: block index -> contiguous {first,last} source
+  // line range. Lets scroll-sync map a block back to its lines in O(1) instead
+  // of scanning the whole line->block array each animation frame.
+  private blockRangesCache: Array<{ first: number; last: number }> | null = null;
+  // Debounce handle for stats emission (word/char counts) so typing doesn't run
+  // a full-document scan + cross-process post on every keystroke.
+  private statsTimer: number | null = null;
 
   constructor(docId: string, parent: HTMLElement, initial: { text: string; lineEnding: string }, callbacks: DocCallbacks) {
     this.docId = docId;
@@ -81,12 +88,17 @@ export class Doc {
     fmToggle.className = "fm-toggle";
     fmToggle.title = "Show / hide front-matter";
     fmToggle.textContent = "▾";
+    fmToggle.setAttribute("aria-label", "Show or hide front-matter");
+    fmToggle.setAttribute("aria-expanded", "false");
     this.fmBody = document.createElement("pre");
     this.fmBody.className = "fm-body";
     this.fmBanner.appendChild(fmSummary);
     this.fmBanner.appendChild(fmToggle);
     this.fmBanner.appendChild(this.fmBody);
-    fmToggle.addEventListener("click", () => this.fmBanner.classList.toggle("collapsed"));
+    fmToggle.addEventListener("click", () => {
+      const collapsed = this.fmBanner.classList.toggle("collapsed");
+      fmToggle.setAttribute("aria-expanded", String(!collapsed));
+    });
 
     const editorRow = document.createElement("div");
     editorRow.className = "editor-row";
@@ -176,10 +188,12 @@ export class Doc {
       if (md) {
         this.body = md;
         this.lineToBlockCache = null;
+        this.blockRangesCache = null;
       }
     } else {
       this.body = this.cm.getText();
       this.lineToBlockCache = null;
+      this.blockRangesCache = null;
     }
   }
 
@@ -193,6 +207,7 @@ export class Doc {
   }
 
   destroy(): void {
+    if (this.statsTimer != null) { window.clearTimeout(this.statsTimer); this.statsTimer = null; }
     try { this.mk.destroy(); } catch {}
     try { this.cm.destroy(); } catch {}
     try { this.host.remove(); } catch {}
@@ -205,13 +220,14 @@ export class Doc {
     this.lastEditedPane = pane;
     this.body = newText;
     this.lineToBlockCache = null;
+    this.blockRangesCache = null;
     if (!this.isDirty) {
       this.isDirty = true;
       this.callbacks.onDirty(this.docId, true);
     } else {
       this.callbacks.onDirty(this.docId, true);
     }
-    this.emitStats();
+    this.scheduleStatsEmit();
   }
 
   private maybeSyncOnFocus(): void {
@@ -294,7 +310,27 @@ export class Doc {
     });
   }
 
+  // Coalesce per-keystroke stats so a burst of typing runs at most one
+  // full-document scan + host post per ~120ms instead of one per key.
+  private scheduleStatsEmit(): void {
+    if (this.statsTimer != null) window.clearTimeout(this.statsTimer);
+    this.statsTimer = window.setTimeout(() => {
+      this.statsTimer = null;
+      this.emitStats();
+    }, 120);
+  }
+
   private installSplitterDrag(): void {
+    // Accessibility: expose the splitter as a focusable separator with a
+    // keyboard resize affordance (WCAG 2.1.1), not mouse-drag only.
+    this.splitter.setAttribute("role", "separator");
+    this.splitter.setAttribute("aria-orientation", "vertical");
+    this.splitter.setAttribute("aria-label", "Resize panes");
+    this.splitter.setAttribute("aria-valuemin", "10");
+    this.splitter.setAttribute("aria-valuemax", "90");
+    this.splitter.setAttribute("aria-valuenow", "50");
+    this.splitter.setAttribute("tabindex", "0");
+
     let dragging = false;
     this.splitter.addEventListener("mousedown", (e) => {
       if (this.mode !== "split") return;
@@ -308,8 +344,25 @@ export class Doc {
       const x = Math.max(160, Math.min(rect.width - 160, e.clientX - rect.left));
       this.sourcePane.style.flex = `0 0 ${x}px`;
       this.formattedPane.style.flex = "1 1 0";
+      this.splitter.setAttribute("aria-valuenow", String(Math.round((x / rect.width) * 100)));
     });
     window.addEventListener("mouseup", () => { dragging = false; });
+
+    this.splitter.addEventListener("keydown", (e) => {
+      if (this.mode !== "split") return;
+      let delta = 0;
+      if (e.key === "ArrowLeft") delta = -24;
+      else if (e.key === "ArrowRight") delta = 24;
+      else return;
+      e.preventDefault();
+      const row = this.splitter.parentElement!;
+      const rect = row.getBoundingClientRect();
+      const currentPx = this.sourcePane.getBoundingClientRect().width;
+      const x = Math.max(160, Math.min(rect.width - 160, currentPx + delta));
+      this.sourcePane.style.flex = `0 0 ${x}px`;
+      this.formattedPane.style.flex = "1 1 0";
+      this.splitter.setAttribute("aria-valuenow", String(Math.round((x / rect.width) * 100)));
+    });
   }
 
   /**
@@ -409,6 +462,26 @@ export class Doc {
   }
 
   /**
+   * Block index -> contiguous source line range, derived once from
+   * getLineToBlock() and cached. The line->block map is monotonic
+   * non-decreasing (blocks are assigned in document order), so each block owns a
+   * single contiguous run of lines. Lets scroll-sync resolve a block's line span
+   * in O(1) instead of scanning the array each frame.
+   */
+  private getBlockRanges(): Array<{ first: number; last: number }> {
+    if (this.blockRangesCache) return this.blockRangesCache;
+    const map = this.getLineToBlock();
+    const ranges: Array<{ first: number; last: number }> = [];
+    for (let i = 0; i < map.length; i++) {
+      const b = map[i];
+      if (!ranges[b]) ranges[b] = { first: i, last: i };
+      else ranges[b].last = i;
+    }
+    this.blockRangesCache = ranges;
+    return ranges;
+  }
+
+  /**
    * Align the formatted pane to source's top-visible line, with sub-block
    * interpolation for smooth scrolling. The fraction of the source block we
    * are into is mapped to the same fraction of the corresponding formatted
@@ -444,11 +517,11 @@ export class Doc {
     const idx0 = Math.max(0, Math.min(lineToBlock.length - 1, lineNum - 1));
     const blockIdx = lineToBlock[idx0];
 
-    // Find first/last source line of this block.
-    let firstLineIdx = idx0;
-    while (firstLineIdx > 0 && lineToBlock[firstLineIdx - 1] === blockIdx) firstLineIdx--;
-    let lastLineIdx = idx0;
-    while (lastLineIdx < lineToBlock.length - 1 && lineToBlock[lastLineIdx + 1] === blockIdx) lastLineIdx++;
+    // First/last source line of this block (O(1) via the range cache).
+    const ranges = this.getBlockRanges();
+    const range = ranges[blockIdx] ?? { first: idx0, last: idx0 };
+    const firstLineIdx = range.first;
+    const lastLineIdx = range.last;
     const linesInBlock = lastLineIdx - firstLineIdx + 1;
     const lineWithinBlock = (lineNum - 1 - firstLineIdx) + subLine;
     const fraction = Math.max(0, Math.min(1, lineWithinBlock / Math.max(1, linesInBlock)));
@@ -522,20 +595,14 @@ export class Doc {
     }
     if (!found) return;
 
-    // Map block index back to its source-line range.
+    // Map block index back to its source-line range (O(1) via the range cache).
     const lineToBlock = this.getLineToBlock();
     if (lineToBlock.length === 0) return;
-    let firstLineIdx = -1;
-    let lastLineIdx = -1;
-    for (let i = 0; i < lineToBlock.length; i++) {
-      if (lineToBlock[i] === blockIdx) {
-        if (firstLineIdx === -1) firstLineIdx = i;
-        lastLineIdx = i;
-      } else if (firstLineIdx !== -1) {
-        break;
-      }
-    }
-    if (firstLineIdx === -1) return;
+    const ranges = this.getBlockRanges();
+    const range = ranges[blockIdx];
+    if (!range) return;
+    const firstLineIdx = range.first;
+    const lastLineIdx = range.last;
 
     const linesInBlock = lastLineIdx - firstLineIdx + 1;
     const targetWithin = fraction * linesInBlock;

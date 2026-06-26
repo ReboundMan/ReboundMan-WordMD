@@ -60,6 +60,14 @@
                     </MenuFlyoutItem.KeyboardAccelerators>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator />
+                <MenuFlyoutItem x:Name="PrintMenuItem" Text="Print..." IsEnabled="False" Click="MenuPrint_Click">
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="P" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem x:Name="PrintFormattedMenuItem" Text="Print Formatted..." IsEnabled="False" Click="MenuPrintFormatted_Click" />
+                <MenuFlyoutItem x:Name="PrintSourceMenuItem" Text="Print Source..." IsEnabled="False" Click="MenuPrintSource_Click" />
+                <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="New Tab" Click="MenuNewTab_Click">
                     <MenuFlyoutItem.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="T" />
@@ -172,24 +180,24 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" Spacing="2" Grid.Column="0">
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Bold (Ctrl+B)" Click="CmdBold_Click">
+                <Button AutomationProperties.Name="Bold" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Bold (Ctrl+B)" Click="CmdBold_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8DD;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Italic (Ctrl+I)" Click="CmdItalic_Click">
+                <Button AutomationProperties.Name="Italic" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Italic (Ctrl+I)" Click="CmdItalic_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8DB;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Strikethrough (Ctrl+Shift+X)" Click="CmdStrike_Click">
+                <Button AutomationProperties.Name="Strikethrough" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Strikethrough (Ctrl+Shift+X)" Click="CmdStrike_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEDE0;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Inline Code (Ctrl+`)" Click="CmdInlineCode_Click">
+                <Button AutomationProperties.Name="Inline code" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Inline Code (Ctrl+`)" Click="CmdInlineCode_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE943;" FontSize="16" />
                 </Button>
                 <AppBarSeparator />
-                <Button x:Name="ReloadBtn" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Reload from Disk (F5)" Click="MenuReload_Click">
+                <Button x:Name="ReloadBtn" AutomationProperties.Name="Reload from disk" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Reload from Disk (F5)" Click="MenuReload_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE72C;" FontSize="16" />
                 </Button>
                 <AppBarSeparator />
-                <DropDownButton Style="{StaticResource ToolbarDropDownButton}" ToolTipService.ToolTip="Heading">
+                <DropDownButton AutomationProperties.Name="Heading" Style="{StaticResource ToolbarDropDownButton}" ToolTipService.ToolTip="Heading">
                     <DropDownButton.Content>
                         <TextBlock Text="H" FontWeight="SemiBold" FontSize="15" />
                     </DropDownButton.Content>
@@ -205,46 +213,46 @@
                     </DropDownButton.Flyout>
                 </DropDownButton>
                 <AppBarSeparator />
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Bullet List (Ctrl+Shift+L)" Click="CmdBullet_Click">
+                <Button AutomationProperties.Name="Bullet list" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Bullet List (Ctrl+Shift+L)" Click="CmdBullet_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE8FD;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Numbered List (Ctrl+Shift+O)" Click="CmdNumbered_Click">
+                <Button AutomationProperties.Name="Numbered list" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Numbered List (Ctrl+Shift+O)" Click="CmdNumbered_Click">
                     <Viewbox Width="16" Height="16">
                         <PathIcon Data="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z" />
                     </Viewbox>
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Task List (Ctrl+Shift+T)" Click="CmdTask_Click">
+                <Button AutomationProperties.Name="Task list" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Task List (Ctrl+Shift+T)" Click="CmdTask_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE9D5;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Blockquote (Ctrl+Shift+Q)" Click="CmdQuote_Click">
+                <Button AutomationProperties.Name="Blockquote" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Blockquote (Ctrl+Shift+Q)" Click="CmdQuote_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE848;" FontSize="16" />
                 </Button>
                 <AppBarSeparator />
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Link (Ctrl+K)" Click="CmdLink_Click">
+                <Button AutomationProperties.Name="Link" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Link (Ctrl+K)" Click="CmdLink_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE71B;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Image (Ctrl+Shift+I)" Click="CmdImage_Click">
+                <Button AutomationProperties.Name="Image" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Image (Ctrl+Shift+I)" Click="CmdImage_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xEB9F;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Code Block (Ctrl+Shift+K)" Click="CmdCodeBlock_Click">
+                <Button AutomationProperties.Name="Code block" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Code Block (Ctrl+Shift+K)" Click="CmdCodeBlock_Click">
                     <Viewbox Width="16" Height="16">
                         <PathIcon Data="M4 7v2c0 .55-.45 1-1 1H2v2h1c.55 0 1 .45 1 1v2c0 1.65 1.35 3 3 3h3v-2H7c-.55 0-1-.45-1-1v-2c0-1.3-.84-2.42-2-2.83v-.34C5.16 9.42 6 8.3 6 7V5c0-.55.45-1 1-1h3V2H7C5.35 2 4 3.35 4 5v2zm17 3c-.55 0-1-.45-1-1V7c0-1.65-1.35-3-3-3h-3v2h3c.55 0 1 .45 1 1v2c0 1.3.84 2.42 2 2.83v.34c-1.16.41-2 1.53-2 2.83v2c0 .55-.45 1-1 1h-3v2h3c1.65 0 3-1.35 3-3v-2c0-.55.45-1 1-1h1v-2h-1z" />
                     </Viewbox>
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Table (Ctrl+Shift+B)" Click="CmdTable_Click">
+                <Button AutomationProperties.Name="Table" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Table (Ctrl+Shift+B)" Click="CmdTable_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xF0E2;" FontSize="16" />
                 </Button>
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Horizontal Rule (Ctrl+Shift+H)" Click="CmdHr_Click">
+                <Button AutomationProperties.Name="Horizontal rule" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Horizontal Rule (Ctrl+Shift+H)" Click="CmdHr_Click">
                     <Viewbox Width="16" Height="16">
                         <PathIcon Data="M4 11h16v2H4z" />
                     </Viewbox>
                 </Button>
                 <AppBarSeparator />
-                <Button Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Clear Formatting (Ctrl+Space)" Click="CmdClear_Click">
+                <Button AutomationProperties.Name="Clear formatting" Style="{StaticResource ToolbarIconButton}" ToolTipService.ToolTip="Clear Formatting (Ctrl+Space)" Click="CmdClear_Click">
                     <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xED62;" FontSize="16" />
                 </Button>
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Grid.Column="1" Spacing="0">
+            <StackPanel Orientation="Horizontal" Grid.Column="1" Spacing="0" AutomationProperties.Name="View mode" AutomationProperties.AccessibilityView="Content">
                 <ToggleButton x:Name="ModeSourceBtn"    Content="Source"    Click="ModeSource_Click"    CornerRadius="4,0,0,4" />
                 <ToggleButton x:Name="ModeFormattedBtn" Content="Formatted" Click="ModeFormatted_Click" CornerRadius="0" IsChecked="True" />
                 <ToggleButton x:Name="ModeSplitBtn"     Content="Split"     Click="ModeSplit_Click"     CornerRadius="0,4,4,0" />

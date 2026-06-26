@@ -12,18 +12,18 @@
 <body data-mode="formatted" data-theme="light">
 <div id="app">
   <div id="editor-host"></div>
-  <div id="find-bar" class="hidden">
+  <div id="find-bar" class="hidden" role="search" aria-label="Find in document">
     <input id="find-input" type="text" placeholder="Find" />
     <input id="replace-input" type="text" placeholder="Replace" class="hidden" />
-    <label class="opt"><input type="checkbox" id="opt-case"> Aa</label>
-    <label class="opt"><input type="checkbox" id="opt-word"> W</label>
-    <label class="opt"><input type="checkbox" id="opt-regex"> .*</label>
-    <span id="find-count" class="count">0 / 0</span>
-    <button id="find-prev" title="Previous (Shift+Enter)">◀</button>
-    <button id="find-next" title="Next (Enter)">▶</button>
-    <button id="replace-one" class="hidden" title="Replace">↻</button>
-    <button id="replace-all" class="hidden" title="Replace all">⇶</button>
-    <button id="find-close" title="Close (Esc)">✕</button>
+    <label class="opt"><input type="checkbox" id="opt-case" aria-label="Match case"> Aa</label>
+    <label class="opt"><input type="checkbox" id="opt-word" aria-label="Match whole word"> W</label>
+    <label class="opt"><input type="checkbox" id="opt-regex" aria-label="Use regular expression"> .*</label>
+    <span id="find-count" class="count" aria-live="polite" aria-atomic="true">0 / 0</span>
+    <button id="find-prev" aria-label="Previous match (Shift+Enter)" title="Previous (Shift+Enter)">◀</button>
+    <button id="find-next" aria-label="Next match (Enter)" title="Next (Enter)">▶</button>
+    <button id="replace-one" class="hidden" aria-label="Replace" title="Replace">↻</button>
+    <button id="replace-all" class="hidden" aria-label="Replace all" title="Replace all">⇶</button>
+    <button id="find-close" aria-label="Close find bar (Esc)" title="Close (Esc)">✕</button>
   </div>
 </div>
 <script src="editor.js"></script>

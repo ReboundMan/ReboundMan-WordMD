@@ -109,20 +109,61 @@ public sealed partial class MainWindow : Window
     private readonly List<string> _pendingExternalFiles = new();
 
     // ---- WebView2 ----
+    // Only the editor page at https://appassets.local/editor.html is trusted to
+    // drive the host bridge. Any other navigation target is blocked (and opened
+    // externally), and inbound web messages from an untrusted source are dropped.
+    private static bool IsTrustedEditorUri(string? uriText)
+    {
+        if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return false;
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!string.Equals(uri.Host, "appassets.local", StringComparison.OrdinalIgnoreCase)) return false;
+        return string.Equals(uri.AbsolutePath, "/editor.html", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task InitializeWebViewAsync()
     {
         await EditorView.EnsureCoreWebView2Async();
         var folder = Path.Combine(AppContext.BaseDirectory, "WebContent");
         EditorView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "appassets.local", folder, CoreWebView2HostResourceAccessKind.Allow);
+
+        // Lock navigation to the trusted editor page. The host bridge has
+        // file-write side effects, so any accidental/forced navigation to other
+        // content would be a security boundary break.
+        EditorView.CoreWebView2.NavigationStarting += (_, e) =>
+        {
+            if (IsTrustedEditorUri(e.Uri)) return;
+            e.Cancel = true;
+            // Only hand off http/https links to the shell. Never ShellExecute
+            // arbitrary schemes (file:, custom protocol handlers, etc.) that a
+            // forced in-page navigation could try to abuse.
+            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var navUri)
+                && (string.Equals(navUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(navUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true });
+                }
+                catch { }
+            }
+        };
+
         EditorView.CoreWebView2.WebMessageReceived += OnWebMessage;
-        EditorView.CoreWebView2.Settings.AreDevToolsEnabled = true;
+        // DevTools / context menus only when a debugger is attached; in shipped
+        // builds they would widen the abuse surface against the privileged bridge.
+        var debug = System.Diagnostics.Debugger.IsAttached;
+        EditorView.CoreWebView2.Settings.AreDevToolsEnabled = debug;
+        EditorView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = debug;
         EditorView.CoreWebView2.Settings.IsStatusBarEnabled = false;
         EditorView.Source = new Uri("https://appassets.local/editor.html");
     }
 
     private void OnWebMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
+        // Drop messages from any source other than the trusted editor page.
+        if (!IsTrustedEditorUri(args.Source)) return;
         try
         {
             using var doc = JsonDocument.Parse(args.WebMessageAsJson);
@@ -138,6 +179,10 @@ public sealed partial class MainWindow : Window
                     PostZoom(_zoom);
                     PostScrollSync(_scrollSync);
                     PostLockToSource(_lockToSource);
+                    PrintMenuItem.IsEnabled = true;
+                    PrintFormattedMenuItem.IsEnabled = true;
+                    PrintSourceMenuItem.IsEnabled = true;
+                    UpdatePrintMenuLabel();
                     DispatcherQueue.TryEnqueue(async () =>
                     {
                         if (!string.IsNullOrEmpty(_pendingStartupFilePath))
@@ -269,6 +314,16 @@ public sealed partial class MainWindow : Window
                         break;
                     case "userGuide": await ShowUserGuideAsync(); break;
                     case "feedback":  await ShowFeedbackDialogAsync(); break;
+                    case "print":     PostPrint(ResolveDefaultPrintMode()); break;
+                    case "printEmpty":
+                        await new ContentDialog
+                        {
+                            XamlRoot = RootGrid.XamlRoot,
+                            Title = "Nothing to print",
+                            Content = "This document is empty.",
+                            CloseButtonText = "OK",
+                        }.ShowAsync();
+                        break;
                 }
             }
             catch (Exception ex)
@@ -284,6 +339,36 @@ public sealed partial class MainWindow : Window
     private void PostScrollSync(bool enabled) => Post("setScrollSync", new JsonObject { ["enabled"] = enabled });
     private void PostLockToSource(bool enabled) => Post("setLockToSource", new JsonObject { ["enabled"] = enabled });
     private void PostFormat(JsonNode payload) => Post("applyFormat", payload);
+
+    // ---- Print ----
+    // The web layer owns rendering the print surface (formatted vs source) and
+    // invoking the browser print dialog via WebView2. The host only decides the
+    // mode and forwards it. "Default" print follows the current view: Source
+    // mode prints raw markdown; Formatted and Split print the rendered output.
+    private string ResolveDefaultPrintMode() => _mode == "source" ? "source" : "formatted";
+
+    private void PostPrint(string mode)
+    {
+        if (!_editorReady) return;
+        var name = _activeTab?.DisplayName;
+        var title = string.IsNullOrWhiteSpace(name) ? "Untitled" : Path.GetFileNameWithoutExtension(name);
+        if (string.IsNullOrWhiteSpace(title)) title = "Untitled";
+        Post("print", new JsonObject { ["mode"] = mode, ["title"] = title });
+    }
+
+    private void MenuPrint_Click(object sender, RoutedEventArgs e) => PostPrint(ResolveDefaultPrintMode());
+    private void MenuPrintFormatted_Click(object sender, RoutedEventArgs e) => PostPrint("formatted");
+    private void MenuPrintSource_Click(object sender, RoutedEventArgs e) => PostPrint("source");
+
+    // Make the default "Print" item self-describing so a user in Split mode can
+    // predict whether Ctrl+P prints the formatted or the source view.
+    private void UpdatePrintMenuLabel()
+    {
+        if (PrintMenuItem == null) return;
+        PrintMenuItem.Text = ResolveDefaultPrintMode() == "source"
+            ? "Print (Source)\u2026"
+            : "Print (Formatted)\u2026";
+    }
 
     private async Task<string?> RequestDocumentTextAsync(string docId)
     {
@@ -392,6 +477,10 @@ public sealed partial class MainWindow : Window
         }
         // Remove from model + view
         DetachWatcher(tab);
+        // Drop this tab's crash-recovery snapshot so a discarded or closed tab
+        // doesn't resurrect on the next launch. (A saved tab was already removed
+        // by SaveAsync; Remove is idempotent.)
+        _recovery.Remove(tab.FilePath ?? "untitled-" + tab.DocId);
         // Fail any in-flight getDocument requests for this tab so callers
         // (e.g. autosave) wake immediately with null instead of timing out.
         var stale = _pendingDocumentRequests
@@ -527,6 +616,9 @@ public sealed partial class MainWindow : Window
         // watcher also skips events while IsSaving is set so the picker UI
         // itself doesn't trip a spurious "file changed on disk" prompt.
         tab.IsSaving = true;
+        // Capture the recovery key BEFORE a Save As reassigns tab.FilePath, so
+        // we remove the right snapshot (and only this tab's) after a clean save.
+        var preSaveRecoveryKey = tab.FilePath ?? "untitled-" + tab.DocId;
         bool saveTimeConflictDetected = false;
         try
         {
@@ -571,8 +663,12 @@ public sealed partial class MainWindow : Window
                 catch { /* stat failure — let the write attempt surface the real error */ }
             }
 
-            var bytesWritten = Encoding.UTF8.GetByteCount(text);
-            await File.WriteAllTextAsync(path!, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            // Honor the file's original encoding: re-emit a UTF-8 BOM if the
+            // file had one, so opening + saving a BOM file doesn't silently
+            // strip it (and shift its byte length).
+            var emitBom = string.Equals(tab.Encoding, "UTF-8 BOM", StringComparison.Ordinal);
+            var bytesWritten = (emitBom ? 3 : 0) + Encoding.UTF8.GetByteCount(text);
+            await File.WriteAllTextAsync(path!, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: emitBom));
 
             // Post-write conflict check: if disk's reported size disagrees
             // with what we just wrote, another writer raced us between
@@ -611,7 +707,8 @@ public sealed partial class MainWindow : Window
             UpdateRecentFilesMenu();
             UpdateTitle();
             AttachWatcher(tab);
-            _recovery.Clear();
+            // Only clear THIS tab's recovery snapshot; other dirty tabs keep theirs.
+            _recovery.Remove(preSaveRecoveryKey);
             _telemetry.TrackEvent("file.save");
             return true;
         }
@@ -785,6 +882,7 @@ public sealed partial class MainWindow : Window
         ModeSourceBtn.IsChecked    = _mode == "source";
         ModeFormattedBtn.IsChecked = _mode == "formatted";
         ModeSplitBtn.IsChecked     = _mode == "split";
+        UpdatePrintMenuLabel();
     }
 
     // ---- Themes ----
@@ -1473,14 +1571,17 @@ public sealed partial class MainWindow : Window
             {
                 try
                 {
-                    var tab = _activeTab;
-                    if (tab == null || !tab.IsDirty || !_editorReady) return;
-                    if (tab.IsSaving) return; // user save in flight — skip this tick
-                    var docId = tab.DocId;
-                    var recoveryKey = tab.FilePath ?? "untitled-" + docId;
-                    var text = await RequestDocumentTextAsync(docId);
-                    if (text == null) return;
-                    _recovery.Save(recoveryKey, text);
+                    if (!_editorReady) return;
+                    // Snapshot EVERY dirty tab, not just the active one, so a
+                    // crash doesn't lose unsaved work in background tabs.
+                    foreach (var tab in _tabs.ToList())
+                    {
+                        if (tab == null || !tab.IsDirty || tab.IsSaving) continue;
+                        var recoveryKey = tab.FilePath ?? "untitled-" + tab.DocId;
+                        var text = await RequestDocumentTextAsync(tab.DocId);
+                        if (text == null) continue;
+                        _recovery.Save(recoveryKey, text, tab.Encoding);
+                    }
                 }
                 catch { }
             });
@@ -1489,30 +1590,36 @@ public sealed partial class MainWindow : Window
 
     private async Task MaybeRestoreRecoveryAsync()
     {
-        var rec = _recovery.LoadAny();
-        if (rec == null) return;
+        var recs = _recovery.LoadAll();
+        if (recs.Count == 0) return;
+        var names = string.Join("\n", recs.Select(r =>
+            r.OriginalPath.StartsWith("untitled") ? "Untitled document" : r.OriginalPath));
         var dlg = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
-            Title = "Recover unsaved work?",
-            Content = $"WordMD found unsaved work from a previous session for:\n\n{rec.OriginalPath}\n\nRestore?",
+            Title = recs.Count == 1 ? "Recover unsaved work?" : $"Recover {recs.Count} unsaved documents?",
+            Content = $"WordMD found unsaved work from a previous session for:\n\n{names}\n\nRestore?",
             PrimaryButtonText = "Restore",
             CloseButtonText = "Discard"
         };
         var r = await dlg.ShowAsync();
         if (r == ContentDialogResult.Primary)
         {
-            var lineEnding = rec.Text.Contains("\r\n") ? "\r\n" : "\n";
-            var path = !rec.OriginalPath.StartsWith("untitled") ? rec.OriginalPath : null;
-            var tab = new TabModel
+            foreach (var rec in recs)
             {
-                FilePath = path,
-                DisplayName = path != null ? Path.GetFileName(path) : "Recovered.md",
-                LineEnding = lineEnding,
-                IsDirty = true,
-            };
-            AddTab(tab, rec.Text, lineEnding);
-            SyncTabHeader(tab);
+                var lineEnding = rec.Text.Contains("\r\n") ? "\r\n" : "\n";
+                var path = !rec.OriginalPath.StartsWith("untitled") ? rec.OriginalPath : null;
+                var tab = new TabModel
+                {
+                    FilePath = path,
+                    DisplayName = path != null ? Path.GetFileName(path) : "Recovered.md",
+                    LineEnding = lineEnding,
+                    Encoding = rec.Encoding,
+                    IsDirty = true,
+                };
+                AddTab(tab, rec.Text, lineEnding);
+                SyncTabHeader(tab);
+            }
             UpdateTitle();
         }
         _recovery.Clear();

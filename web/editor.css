@@ -108,7 +108,7 @@ body { font-family: var(--font-formatted); font-size: var(--font-size); }
 .milkdown p, .milkdown ul, .milkdown ol, .milkdown blockquote, .milkdown pre, .milkdown table {
   margin: 0.6em 0;
 }
-.milkdown a { color: var(--accent); text-decoration: none; }
+.milkdown a { color: var(--accent); text-decoration: underline; }
 .milkdown a:hover { text-decoration: underline; }
 .milkdown code {
   font-family: var(--font-source); background: var(--code-bg); color: var(--code-fg);
@@ -156,3 +156,51 @@ body { font-family: var(--font-formatted); font-size: var(--font-size); }
 }
 #find-bar .opt input { margin: 0 2px 0 0; }
 #find-bar .count { color: var(--muted); margin: 0 4px; min-width: 50px; text-align: center; }
+
+/* --- Print --- */
+/* The print surface is hidden on screen and only revealed during printing.
+   Because these rules live inside @media print, leaving the "printing" class on
+   <body> can never affect the on-screen editor. */
+#print-root { display: none; }
+
+@media print {
+  /* Hide the live editor and all chrome; show only the print surface. */
+  #app { display: none !important; }
+  #find-bar { display: none !important; }
+  #print-root { display: block !important; }
+
+  html, body { height: auto; background: #ffffff; color: #000000; }
+
+  /* Source print: raw markdown, monospace, wrapped. */
+  .print-source {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-source);
+    font-size: 11pt;
+    line-height: 1.45;
+    margin: 0;
+    color: #000000;
+  }
+
+  /* Formatted print: rendered WYSIWYG content. Inherits .milkdown styles;
+     these overrides keep it readable on white paper and reduce awkward breaks. */
+  .print-formatted {
+    max-width: 100%;
+    color: #000000;
+    font-family: var(--font-formatted);
+  }
+  .print-formatted a { color: #000000; text-decoration: underline; }
+  .print-formatted h1, .print-formatted h2, .print-formatted h3,
+  .print-formatted h4, .print-formatted h5, .print-formatted h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .print-formatted pre, .print-formatted blockquote,
+  .print-formatted table, .print-formatted img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-formatted img { max-width: 100%; height: auto; }
+
+  @page { margin: 0.75in; }
+}

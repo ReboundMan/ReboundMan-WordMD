@@ -80,6 +80,27 @@ export class MilkdownHost {
     return out;
   }
 
+  /**
+   * A deep clone of the rendered ProseMirror DOM for the full document, for the
+   * print pipeline's "formatted" output. Cloning the live render tree avoids a
+   * serialize-to-HTML + reparse round-trip. ProseMirror is not viewport-
+   * virtualized, so the clone holds the entire document (unlike CodeMirror,
+   * whose DOM only holds the visible viewport).
+   */
+  getRenderedNodeClone(): HTMLElement | null {
+    if (!this.editor) return null;
+    let clone: HTMLElement | null = null;
+    try {
+      this.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        clone = (view.dom as HTMLElement).cloneNode(true) as HTMLElement;
+      });
+    } catch (err) {
+      console.error("getRenderedNodeClone failed", err);
+    }
+    return clone;
+  }
+
   focus(): void {
     if (!this.editor) {
       // Editor still initializing; focus once it's ready.

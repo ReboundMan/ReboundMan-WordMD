@@ -40,6 +40,17 @@ WordMD is a Windows desktop Markdown editor that gives Markdown files a familiar
 2. User sends feedback from the Help menu; WordMD saves it locally and can prefill a GitHub issue.
 3. Maintainer builds the web bundle, publishes the .NET app, and packages it with Inno Setup.
 
+## Printing
+
+WordMD prints through the WebView2 (Chromium) print dialog, which doubles as the Save as PDF path.
+
+- **Menu:** File contains "Print" (Ctrl+P), "Print Formatted", and "Print Source". The default "Print" item is view sensitive and its label reflects the resolved target: Source view prints raw Markdown, Formatted and Split views print the rendered output. The two explicit items override the default regardless of the current view.
+- **Default resolution:** source view maps to source print; formatted and split views map to formatted print.
+- **Included content:** source print emits the full file including front-matter. Formatted print intentionally omits front-matter and prints only the rendered body. This asymmetry is deliberate; do not "fix" formatted print to include front-matter without updating this spec and HELP.md.
+- **Scope:** printing captures the whole document, not just the visible viewport. Editor chrome (menus, tabs, find bar, the inactive pane) is never printed. The print title is set to the document name so the default PDF filename matches.
+- **Readiness and empty docs:** the print items are disabled until the editor is ready; printing an empty document shows a "Nothing to print" notice instead of opening a blank dialog.
+- **Non-goals (current):** no in-app print preview, no custom headers, footers, or page numbers, and no per-document print settings.
+
 ## Data model summary
 
 | Store | Shape | Notes |

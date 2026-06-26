@@ -66,6 +66,22 @@ Picks the alignment algorithm used while Sync Scrolling is on. **Both algorithms
 
 ---
 
+## Printing
+
+**File → Print** sends the active document to your printer (or to a PDF writer through the standard Windows print dialog).
+
+| Menu item | What prints | Shortcut |
+| --- | --- | --- |
+| **Print…** | Whatever the current view shows: **Source** mode prints raw Markdown; **Formatted** and **Split** print the rendered output. | Ctrl+P |
+| **Print Formatted…** | Always the rendered WYSIWYG output, regardless of the current view. | |
+| **Print Source…** | Always the raw Markdown (front-matter included), in a monospace layout. | |
+
+- Printing captures the **whole document**, not just the part currently scrolled into view.
+- **Print Source** includes front-matter; **Print Formatted** prints only the rendered body and omits front-matter.
+- Editor chrome (menus, tabs, the find bar, the inactive pane) is never printed.
+
+---
+
 ## Telemetry & feedback
 
 - **Help → Send Anonymous Usage Data** — opt-in, off by default. Sends feature counts only; never document content or file paths. Stored locally as JSONL too (see **Help → Open Telemetry Log Folder**).
@@ -81,6 +97,7 @@ Picks the alignment algorithm used while Sync Scrolling is on. **Both algorithms
 | Open file | Ctrl+O |
 | Save | Ctrl+S |
 | Save As | Ctrl+Shift+S |
+| Print | Ctrl+P |
 | Close tab | Ctrl+W |
 | Reload file | F5 |
 | Bold / Italic / Strikethrough | Ctrl+B / Ctrl+I / Ctrl+Shift+X |
