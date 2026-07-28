@@ -6,15 +6,15 @@
 
 ## Next (Up Soon)
 
-- [ ] (M?)(M?) Decide code-signing path for the Windows installer.
-- [ ] (S?)(M?) Keep `VERSION` and `installer\WordMD.iss` aligned before each release.
+- [ ] (M)(H) Decide code-signing path for the Windows installer.
+- [ ] (S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release.
 
 ## Ideas / Backlog
 
-- [ ] (L?)(M?) Make front-matter editable in the Source pane (whole-buffer model): mount the source pane with the full document so front-matter round-trips and edits are not dropped. Deferred from the fleet audit because it changes the dual-pane sync and scroll-sync mapping and needs tests. The current behavior preserves loaded front-matter and is regression-free.
-- [ ] (M?)(M?) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs).
-- [ ] (S?)(L?) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues.
-- [ ] (S?)(L?) Consider a release smoke-test checklist that can be run on a clean Windows VM.
+- [ ] (M)(M) Make front-matter editable in the Source pane (whole-buffer model): mount the source pane with the full document so front-matter round-trips and edits are not dropped. Deferred from the fleet audit because it changes the dual-pane sync and scroll-sync mapping and needs tests. The current behavior preserves loaded front-matter and is regression-free.
+- [ ] (M)(M) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs).
+- [ ] (S)(M) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues.
+- [x] (S?)(L?) Consider a release smoke-test checklist that can be run on a clean Windows VM. removed 2026-07-28 (triage)
 
 ## Bugs
 
