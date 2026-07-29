@@ -11,7 +11,7 @@
 
 ## Ideas / Backlog
 
-- [ ] (M)(M) Make front-matter editable in the Source pane (whole-buffer model): mount the source pane with the full document so front-matter round-trips and edits are not dropped. Deferred from the fleet audit because it changes the dual-pane sync and scroll-sync mapping and needs tests. The current behavior preserves loaded front-matter and is regression-free.
+- [ ] (S)(H) Make front-matter editable in the Source pane (whole-buffer model): mount the source pane with the full document so front-matter round-trips and edits are not dropped. Deferred from the fleet audit because it changes the dual-pane sync and scroll-sync mapping and needs tests. The current behavior preserves loaded front-matter and is regression-free. Spec drafted 2026-07-29 (features/make-front-matter-editable-in-the-source-pane.md, status: draft, awaiting review; flags that confirmed size S may be optimistic given the scroll-sync offset and the missing test harness).
 - [ ] (M)(M) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs).
 - [ ] (S)(M) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues.
 - [x] (S?)(L?) Consider a release smoke-test checklist that can be run on a clean Windows VM. removed 2026-07-28 (triage)
