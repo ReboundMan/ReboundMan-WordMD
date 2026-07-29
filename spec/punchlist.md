@@ -6,8 +6,8 @@
 
 ## Next (Up Soon)
 
-- [ ] (M)(H) Decide code-signing path for the Windows installer.
-- [ ] (S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release.
+- [ ] (M)(H) Decide code-signing path for the Windows installer. Spec drafted 2026-07-29 (features/decide-code-signing-path-for-the-windows-installer.md, status: draft, awaiting review).
+- [ ] (S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release. Spec drafted 2026-07-29 (features/keep-version-and-installer-wordmd-iss-aligned-before-each-re.md, status: draft, awaiting review).
 
 ## Ideas / Backlog
 
