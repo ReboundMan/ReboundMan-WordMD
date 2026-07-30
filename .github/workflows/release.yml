@@ -1,0 +1,77 @@
+name: Release installer
+
+# Builds and attaches the installer when a GitHub release is published.
+# Fails fast if the release tag does not match the repo VERSION file, so a
+# release can never ship under a number the code does not carry (the v1.4.6 /
+# v1.5.0 latest-badge mixup class of problem).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Verify tag matches VERSION
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $tag = '${{ github.event.release.tag_name }}'
+          if ($tag -ne "v$version") {
+            Write-Error "Release tag '$tag' does not match VERSION 'v$version'. Align them and re-release."
+            exit 1
+          }
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web\package-lock.json
+
+      - name: Build web bundle
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish WordMD
+        run: dotnet publish src\WordMD\WordMD.csproj -c Release -r win-x64 -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -p:PublishTrimmed=false
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc installer\WordMD.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compute SHA-256
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist\WordMD-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$($exe.FullName).sha256" -Value "$hash  $($exe.Name)" -NoNewline
+          Write-Host "$hash  $($exe.Name)"
+
+      - name: Upload assets to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload '${{ github.event.release.tag_name }}' (Get-ChildItem dist\WordMD-Setup-*.exe, dist\WordMD-Setup-*.sha256).FullName --clobber

@@ -7,7 +7,7 @@
 ## Next (Up Soon)
 
 - [ ] (M)(H) Decide code-signing path for the Windows installer. Spec drafted 2026-07-29 (features/decide-code-signing-path-for-the-windows-installer.md, status: draft, awaiting review).
-- [ ] (S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release. Spec drafted 2026-07-29 (features/keep-version-and-installer-wordmd-iss-aligned-before-each-re.md, status: draft, awaiting review).
+- [x] (S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release. Implemented 2026-07-30 with v1.6.0: the version is single-sourced from the repo-root `VERSION` file (the csproj reads it at build time, `WordMD.iss` reads it at installer compile time, and the app's status bar and About dialog display the assembly version instead of hardcoded strings), and the new `.github/workflows/release.yml` fails the release build if the tag does not match `VERSION`. Spec drafted 2026-07-29 (features/keep-version-and-installer-wordmd-iss-aligned-before-each-re.md) remains for review against the implementation.
 
 ## Ideas / Backlog
 

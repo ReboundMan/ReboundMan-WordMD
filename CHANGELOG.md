@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-30
+
+### Added
+
+- Front matter is now editable inside WordMD. The banner above the editor expands via its caret to show the YAML, and an Edit checkbox (visible only when expanded) swaps the read-only view for an editor. Escape cancels an edit session; deleting all fields removes the block from the document with the banner staying visible as "Front-matter: removed" until the tab closes. A guard rejects a line of only `---`, which would otherwise corrupt the block boundary on the next open.
+- A release workflow (`.github/workflows/release.yml`) now builds the web bundle, publishes the app, compiles the installer, and attaches it with a SHA-256 file to the GitHub release automatically. It fails fast if the release tag does not match `VERSION`.
+
+### Changed
+
+- The product version is single-sourced from the repo-root `VERSION` file: the csproj reads it at build time (status bar and About dialog now display the assembly version instead of hardcoded strings, which had drifted to 1.4.5) and `installer\WordMD.iss` reads it at compile time.
+- Dirty-state notifications from the editor to the host are throttled, cutting cross-process messages during fast typing.
+
+### Fixed
+
+- Saving a document whose only change is a front-matter edit no longer re-serializes the untouched body, so those saves change exactly the edited lines.
+
 ## [1.5.0] - 2026-06-26
 
 ### Added

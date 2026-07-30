@@ -56,3 +56,6 @@ private/
 # Fleet output
 reviews/*
 !reviews/.gitkeep
+
+# Claude Code local config
+.claude/

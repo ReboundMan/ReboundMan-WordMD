@@ -20,6 +20,10 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <PublishTrimmed>false</PublishTrimmed>
     <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- Single source of truth for the product version is the repo-root VERSION
+         file; installer\WordMD.iss reads the same file at compile time. The app
+         displays this via AssemblyInformationalVersion (see MainWindow.AppVersion). -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</Version>
     <!-- We provide our own Main in Program.cs so we can implement
          single-instance activation (file double-clicks reuse the running window).
          The WinUI XAML compiler guards its generated Program.Main with

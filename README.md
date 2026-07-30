@@ -8,7 +8,7 @@
 
 ## Status
 
-**v1.4.0** -- Tabs, WYSIWYG editing, professional toolbar icons, bidirectional split-mode scroll sync, light/dark/system theming, and silent auto-reload on external file changes. Distributed as an Inno Setup `.exe`; see [`INSTALL.md`](./INSTALL.md).
+**v1.6.0** -- Front-matter viewing and editing in a collapsible banner pane, printing (current view, formatted, or source), tabs, WYSIWYG editing, bidirectional split-mode scroll sync, light/dark/system theming, and silent auto-reload on external file changes. Distributed as an Inno Setup `.exe`; see [`INSTALL.md`](./INSTALL.md).
 
 ## Documents
 

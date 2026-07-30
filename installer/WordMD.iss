@@ -5,7 +5,11 @@
 ; ==========================================================================
 
 #define MyAppName       "WordMD"
-#define MyAppVersion    "1.5.0"
+; Version is single-sourced from the repo-root VERSION file (same source the
+; csproj reads), so the installer can no longer drift from the app.
+#define VerFile         FileOpen(AddBackslash(SourcePath) + "..\VERSION")
+#define MyAppVersion    Trim(FileRead(VerFile))
+#expr FileClose(VerFile)
 #define MyAppPublisher  "ReboundMan"
 #define MyAppURL        "https://github.com/ReboundMan/ReboundMan-WordMD"
 #define MyAppExeName    "WordMD.exe"

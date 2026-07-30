@@ -43,6 +43,21 @@ public sealed partial class MainWindow : Window
 
     private sealed record PendingDocumentRequest(TaskCompletionSource<string?> Tcs, string ExpectedDocId);
 
+    // Product version, sourced from the assembly (which the csproj reads from the
+    // repo-root VERSION file). Strips any "+commit" build-metadata suffix.
+    private static string AppVersion
+    {
+        get
+        {
+            var info = System.Reflection.CustomAttributeExtensions
+                .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                    typeof(MainWindow).Assembly)?.InformationalVersion;
+            if (string.IsNullOrEmpty(info)) return "0.0.0";
+            var plus = info.IndexOf('+');
+            return plus >= 0 ? info.Substring(0, plus) : info;
+        }
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -50,6 +65,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
+        StatusVersion.Text = "v" + AppVersion;
 
         _settings.Load();
         _telemetry = new TelemetryService(_settings);
@@ -1108,7 +1124,7 @@ public sealed partial class MainWindow : Window
 
     private async void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
-        await ShowErrorAsync("About WordMD", "WordMD (Dr Word) v1.4.5\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
+        await ShowErrorAsync("About WordMD", $"WordMD (Dr Word) v{AppVersion}\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)

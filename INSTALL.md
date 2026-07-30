@@ -4,7 +4,7 @@ WordMD ships as a self-contained Windows installer. No external runtime install 
 
 ## Installer
 
-1. Download `WordMD-Setup-<version>.exe` (e.g. `WordMD-Setup-1.4.4.exe`) from the GitHub release.
+1. Download `WordMD-Setup-<version>.exe` (e.g. `WordMD-Setup-1.6.0.exe`) from the GitHub release.
 2. Double-click and follow the prompts.
 3. Optional checkboxes during setup:
    - **Create a desktop shortcut**
