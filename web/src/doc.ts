@@ -34,7 +34,12 @@ export class Doc {
   readonly formattedPane: HTMLElement;   // .formatted-pane
   readonly splitter: HTMLElement;        // .splitter
   readonly fmBanner: HTMLElement;        // front-matter summary banner
-  readonly fmBody: HTMLElement;          // expanded front-matter content
+  readonly fmBody: HTMLElement;          // expanded front-matter content (read-only view)
+  readonly fmEdit: HTMLTextAreaElement;  // expanded front-matter editor (edit mode)
+  readonly fmEditToggle: HTMLInputElement; // "Edit" checkbox, visible only when expanded
+  private readonly fmToggle: HTMLButtonElement; // expand/collapse button (caret + summary)
+  private readonly fmCaret: HTMLElement;
+  private readonly fmSummary: HTMLElement;
 
   cm!: CodeMirrorHost;
   mk!: MilkdownHost;
@@ -44,6 +49,19 @@ export class Doc {
   body: string = "";
   lineEnding: "\r\n" | "\n" = "\r\n";
   isDirty: boolean = false;
+  // True once a pane (source/formatted) has received any user edit this session.
+  // Like isDirty it is never reset (the web layer is not told about saves); it
+  // gates flush()/syncInactiveFromCanonical() so front-matter-only edits never
+  // re-serialize an untouched body through Milkdown.
+  private paneEdited: boolean = false;
+  // Front-matter edit-mode state: snapshot for Escape-cancel, and a validity
+  // flag (a bare "---" line inside the YAML would close the fence early on the
+  // next load, so such input is held, not committed).
+  private fmEditSnapshot: string = "";
+  private fmInvalid: boolean = false;
+  // Throttle state for dirty-notification posts to the host.
+  private lastDirtyPost: number = 0;
+  private dirtyPostTimer: number | null = null;
   originalText: string = "";   // raw bytes (as string) loaded from disk; for clean-doc passthrough
   lastEditedPane: Pane = "formatted";
   mode: "source" | "formatted" | "split" = "formatted";
@@ -80,24 +98,57 @@ export class Doc {
     this.host.dataset.docId = docId;
 
     this.fmBanner = document.createElement("div");
-    this.fmBanner.className = "fm-banner hidden";
-    const fmSummary = document.createElement("span");
-    fmSummary.className = "fm-summary";
-    const fmToggle = document.createElement("button");
-    fmToggle.type = "button";
-    fmToggle.className = "fm-toggle";
-    fmToggle.title = "Show / hide front-matter";
-    fmToggle.textContent = "▾";
-    fmToggle.setAttribute("aria-label", "Show or hide front-matter");
-    fmToggle.setAttribute("aria-expanded", "false");
+    this.fmBanner.className = "fm-banner hidden collapsed";
+    const fmHeader = document.createElement("div");
+    fmHeader.className = "fm-header";
+    // One button carries the caret AND the summary text: a single keyboard tab
+    // stop with a large click target, aria-expanded, and aria-controls.
+    this.fmToggle = document.createElement("button");
+    this.fmToggle.type = "button";
+    this.fmToggle.className = "fm-toggle";
+    this.fmToggle.title = "Show / hide front-matter";
+    this.fmToggle.setAttribute("aria-expanded", "false");
+    this.fmToggle.setAttribute("aria-controls", `fm-content-${docId}`);
+    this.fmCaret = document.createElement("span");
+    this.fmCaret.className = "fm-caret";
+    this.fmCaret.textContent = "▸";
+    this.fmCaret.setAttribute("aria-hidden", "true");
+    this.fmSummary = document.createElement("span");
+    this.fmSummary.className = "fm-summary";
+    this.fmToggle.appendChild(this.fmCaret);
+    this.fmToggle.appendChild(this.fmSummary);
+    const fmEditLabel = document.createElement("label");
+    fmEditLabel.className = "fm-edit-label";
+    this.fmEditToggle = document.createElement("input");
+    this.fmEditToggle.type = "checkbox";
+    this.fmEditToggle.className = "fm-edit-toggle";
+    fmEditLabel.appendChild(this.fmEditToggle);
+    fmEditLabel.appendChild(document.createTextNode("Edit"));
+    const fmContent = document.createElement("div");
+    fmContent.className = "fm-content";
+    fmContent.id = `fm-content-${docId}`;
     this.fmBody = document.createElement("pre");
     this.fmBody.className = "fm-body";
-    this.fmBanner.appendChild(fmSummary);
-    this.fmBanner.appendChild(fmToggle);
-    this.fmBanner.appendChild(this.fmBody);
-    fmToggle.addEventListener("click", () => {
-      const collapsed = this.fmBanner.classList.toggle("collapsed");
-      fmToggle.setAttribute("aria-expanded", String(!collapsed));
+    this.fmEdit = document.createElement("textarea");
+    this.fmEdit.className = "fm-edit";
+    this.fmEdit.spellcheck = false;
+    this.fmEdit.setAttribute("aria-label", "Edit front-matter YAML");
+    this.fmEdit.title = "Escape cancels front-matter edits";
+    fmContent.appendChild(this.fmBody);
+    fmContent.appendChild(this.fmEdit);
+    fmHeader.appendChild(this.fmToggle);
+    fmHeader.appendChild(fmEditLabel);
+    this.fmBanner.appendChild(fmHeader);
+    this.fmBanner.appendChild(fmContent);
+    this.fmToggle.addEventListener("click", () =>
+      this.setFmCollapsed(!this.fmBanner.classList.contains("collapsed")));
+    this.fmEditToggle.addEventListener("change", () => this.setFmEditing(this.fmEditToggle.checked));
+    this.fmEdit.addEventListener("input", () => this.onFrontMatterEdit(this.fmEdit.value));
+    this.fmEdit.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.cancelFmEdit();
+      }
     });
 
     const editorRow = document.createElement("div");
@@ -182,7 +233,7 @@ export class Doc {
 
   /** Ensure body holds the canonical text from whichever pane was last edited. */
   flush(): void {
-    if (!this.isDirty) return;       // pristine: body already matches originalText
+    if (!this.paneEdited) return;    // no pane edits: body is already canonical
     if (this.lastEditedPane === "formatted") {
       const md = this.mk.getMarkdown();
       if (md) {
@@ -208,6 +259,7 @@ export class Doc {
 
   destroy(): void {
     if (this.statsTimer != null) { window.clearTimeout(this.statsTimer); this.statsTimer = null; }
+    if (this.dirtyPostTimer != null) { window.clearTimeout(this.dirtyPostTimer); this.dirtyPostTimer = null; }
     try { this.mk.destroy(); } catch {}
     try { this.cm.destroy(); } catch {}
     try { this.host.remove(); } catch {}
@@ -218,16 +270,33 @@ export class Doc {
   private onPaneEdit(pane: Pane, newText: string): void {
     if (this.syncing) return;
     this.lastEditedPane = pane;
+    this.paneEdited = true;
     this.body = newText;
     this.lineToBlockCache = null;
     this.blockRangesCache = null;
-    if (!this.isDirty) {
-      this.isDirty = true;
-      this.callbacks.onDirty(this.docId, true);
-    } else {
-      this.callbacks.onDirty(this.docId, true);
-    }
+    this.notifyDirty();
     this.scheduleStatsEmit();
+  }
+
+  // Mark dirty and tell the host, throttled: an immediate leading post keeps the
+  // tab indicator instant, a trailing post keeps the host current, and a typing
+  // burst no longer produces one cross-process message per keystroke. The posts
+  // must keep flowing while dirty (not fire once per clean->dirty transition):
+  // the host clears its own dirty state on save without telling the web layer.
+  private notifyDirty(): void {
+    this.isDirty = true;
+    const now = Date.now();
+    if (now - this.lastDirtyPost >= 200) {
+      this.lastDirtyPost = now;
+      this.callbacks.onDirty(this.docId, true);
+      return;
+    }
+    if (this.dirtyPostTimer != null) return;
+    this.dirtyPostTimer = window.setTimeout(() => {
+      this.dirtyPostTimer = null;
+      this.lastDirtyPost = Date.now();
+      this.callbacks.onDirty(this.docId, true);
+    }, 200);
   }
 
   private maybeSyncOnFocus(): void {
@@ -255,9 +324,10 @@ export class Doc {
   }
 
   private syncInactiveFromCanonical(): void {
-    // Only sync if we've actually had user edits to propagate. Before any edit,
-    // both panes were initialized with the same body text already.
-    if (!this.isDirty) return;
+    // Only sync if a pane actually has user edits to propagate. Before any pane edit,
+    // both panes were initialized with the same body text already (front-matter-only
+    // edits never touch the body).
+    if (!this.paneEdited) return;
     this.syncing = true;
     try {
       this.flush();
@@ -283,18 +353,97 @@ export class Doc {
   }
 
   private refreshFrontMatterBanner(): void {
-    const summary = this.fmBanner.querySelector(".fm-summary") as HTMLElement | null;
     if (!this.frontMatter) {
+      // Load-time only: a document that never had front matter shows no banner.
       this.fmBanner.classList.add("hidden");
       this.fmBody.textContent = "";
-      if (summary) summary.textContent = "";
+      this.updateFmSummary();
       return;
     }
-    const { fieldCount, inner } = summarizeFrontMatter(this.frontMatter);
     this.fmBanner.classList.remove("hidden");
-    this.fmBanner.classList.add("collapsed");
-    if (summary) summary.textContent = `Front-matter: ${fieldCount} field${fieldCount === 1 ? "" : "s"}`;
-    this.fmBody.textContent = inner;
+    this.setFmCollapsed(true);
+    this.fmBody.textContent = summarizeFrontMatter(this.frontMatter).inner;
+    this.updateFmSummary();
+  }
+
+  /** Single point that collapses/expands, keeping glyph and aria-expanded in step. */
+  private setFmCollapsed(collapsed: boolean): void {
+    this.fmBanner.classList.toggle("collapsed", collapsed);
+    this.fmToggle.setAttribute("aria-expanded", String(!collapsed));
+    this.fmCaret.textContent = collapsed ? "▸" : "▾";
+    this.updateFmSummary();
+  }
+
+  private updateFmSummary(): void {
+    const editing = this.fmBanner.classList.contains("editing");
+    if (this.fmInvalid) {
+      this.fmSummary.textContent = "Front-matter: a line of only --- is not allowed";
+      return;
+    }
+    if (!this.frontMatter) {
+      // Post-removal state: the banner stays visible (see setFmEditing) so the
+      // removal is announced and re-adding stays one checkbox away.
+      this.fmSummary.textContent = editing
+        ? "Front-matter: empty (block will be removed)"
+        : "Front-matter: removed";
+      return;
+    }
+    const { fieldCount } = summarizeFrontMatter(this.frontMatter);
+    const suffix = editing ? " (editing)" : "";
+    this.fmSummary.textContent = `Front-matter: ${fieldCount} field${fieldCount === 1 ? "" : "s"}${suffix}`;
+  }
+
+  /** "Edit" checkbox: swap the read-only YAML view for the textarea (and back). */
+  private setFmEditing(editing: boolean): void {
+    if (editing) {
+      const inner = summarizeFrontMatter(this.frontMatter).inner;
+      this.fmEditSnapshot = this.frontMatter;
+      // Leave the value alone when unchanged so the textarea's native undo
+      // stack survives read/edit round-trips.
+      if (this.fmEdit.value !== inner) this.fmEdit.value = inner;
+      this.fmInvalid = false;
+      this.fmBanner.classList.add("editing");
+      this.updateFmSummary();
+      this.fmEdit.focus();
+      return;
+    }
+    // Exiting edit mode commits the current text; invalid text (bare "---"
+    // line) was never committed, so revert the textarea to the last good value.
+    if (this.fmInvalid) {
+      this.fmInvalid = false;
+      this.fmEdit.value = summarizeFrontMatter(this.frontMatter).inner;
+    }
+    this.fmBanner.classList.remove("editing");
+    this.fmBody.textContent = summarizeFrontMatter(this.frontMatter).inner;
+    // Even when everything was deleted the banner stays visible ("Front-matter:
+    // removed"): no vanishing UI, no dropped focus, and Edit can bring it back.
+    this.updateFmSummary();
+  }
+
+  /** Escape in the textarea: restore the value from edit-mode entry and exit. */
+  private cancelFmEdit(): void {
+    this.frontMatter = this.fmEditSnapshot;
+    this.fmInvalid = false;
+    this.fmEdit.value = summarizeFrontMatter(this.frontMatter).inner;
+    this.fmEditToggle.checked = false;
+    this.setFmEditing(false);
+    this.fmEditToggle.focus();
+  }
+
+  /** Textarea edits: re-wrap the inner YAML in fences and mark the doc dirty. */
+  private onFrontMatterEdit(inner: string): void {
+    // A line of only "---" would close the fence early on the next load and
+    // silently re-split the file; hold the last good value until it is fixed.
+    if (inner.split("\n").some((l) => l === "---")) {
+      this.fmInvalid = true;
+      this.updateFmSummary();
+      return;
+    }
+    this.fmInvalid = false;
+    const trimmed = inner.replace(/\s+$/, "");
+    this.frontMatter = trimmed.length === 0 ? "" : `---\n${trimmed}\n---\n`;
+    this.notifyDirty();
+    this.updateFmSummary();
   }
 
   private emitStats(): void {
