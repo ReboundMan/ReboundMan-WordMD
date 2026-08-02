@@ -17,6 +17,8 @@
 
 ## Bugs
 
+- [ ] 2026-07-30 — The icon is correct in the taskbar and on the launch button, but wrong when alt-tabbing between applications. Two different Windows icon surfaces, likely the same icon resource not wired to both. _(vault: processed/2026-07-30-wordmd-taskbar-alttab-icon-bug.md)_
+
 ## Done
 
 - [x] (S)(H) Make front-matter editable, 2026-07-30. Redesigned by JJ from the whole-buffer model to a banner-pane model: the existing banner expands via caret, and an Edit checkbox (visible only when expanded) swaps the read-only YAML for a textarea. Pane sync and scroll sync untouched; front-matter-only saves leave the body byte-clean. Fleet code-review panel (Hawk, Bolt, Rookie, Lens, Beacon) ran same day; all findings applied (fence-escape guard, persistent removal banner, Escape cancel, accessible toggle, throttled dirty IPC). Spec updated (features/make-front-matter-editable-in-the-source-pane.md). No test harness added; verified by driving the built bundle in a browser.

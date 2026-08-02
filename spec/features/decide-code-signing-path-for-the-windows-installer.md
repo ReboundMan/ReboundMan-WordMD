@@ -1,4 +1,5 @@
 ---
+spec: 10024
 feature: decide-code-signing-path-for-the-windows-installer
 status: draft
 agent: emily

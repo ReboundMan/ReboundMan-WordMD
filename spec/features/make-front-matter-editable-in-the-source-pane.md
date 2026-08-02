@@ -1,4 +1,5 @@
 ---
+spec: 10026
 feature: make-front-matter-editable-in-the-source-pane
 status: built
 built: 2026-07-30 (implemented directly by JJ, outside Hopper's lane; fleet-reviewed and browser-verified per the sections below)
