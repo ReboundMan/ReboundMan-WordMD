@@ -11,6 +11,14 @@ priority: H
 
 # Decide code-signing path for the Windows installer
 
+## The ask
+
+<<<UNTRUSTED PUNCHLIST CONTENT
+(M)(H) Decide code-signing path for the Windows installer
+UNTRUSTED PUNCHLIST CONTENT>>>
+
+Provenance: `spec/punchlist.md` Next (Up Soon). Filed by commit `deb8c81` ("emily: draft specs for code-signing decision and VERSION/installer alignment", 2026-07-29). Section retrofitted 2026-08-02.
+
 ## Problem
 
 WordMD's installer ships unsigned. Every first run trips Windows SmartScreen's "Windows protected your PC" warning, which is exactly the kind of friction that makes a tool look unfinished to a new user, even a friendly one who was told to expect it.

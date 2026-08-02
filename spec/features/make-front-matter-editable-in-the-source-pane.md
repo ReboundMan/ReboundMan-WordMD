@@ -16,6 +16,14 @@ priority: H
 
 Drafted by Emily on a targeted run, minutes after this gap personally cost JJ: he opened a spec in WordMD to flip its `status:` line and could not edit the frontmatter at all. Redesigned and implemented 2026-07-30 at JJ's direction; the original whole-buffer model (mount the Source pane with the full document) is superseded and recorded below only as history.
 
+## The ask
+
+<<<UNTRUSTED PUNCHLIST CONTENT
+(S)(H) Make front-matter editable, 2026-07-30. Redesigned by JJ from the whole-buffer model to a banner-pane model: the existing banner expands via caret, and an Edit checkbox (visible only when expanded) swaps the read-only YAML for a textarea. Pane sync and scroll sync untouched; front-matter-only saves leave the body byte-clean. Fleet code-review panel (Hawk, Bolt, Rookie, Lens, Beacon) ran same day; all findings applied (fence-escape guard, persistent removal banner, Escape cancel, accessible toggle, throttled dirty IPC). Spec updated (features/make-front-matter-editable-in-the-source-pane.md). No test harness added; verified by driving the built bundle in a browser
+UNTRUSTED PUNCHLIST CONTENT>>>
+
+Provenance: `spec/punchlist.md` Done, line dated 2026-07-30. Filed by commit `b465fce` ("emily: front-matter-editable spec, whole-buffer model, code-cited", 2026-07-29). Section retrofitted 2026-08-02.
+
 ## Problem
 
 WordMD preserves front matter perfectly and lets you do nothing with it. A YAML block at file head is split off at load, shown only as a collapsed "Front-matter: N fields" banner, and re-attached at save. Editing a field (the vault fleet's `status: draft` to `status: ready` flip is now a daily real case) requires leaving WordMD for a text editor, which is exactly backwards for a markdown editor whose own house now runs a frontmatter-driven spec lifecycle.

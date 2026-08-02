@@ -12,6 +12,14 @@ priority: H
 
 # Keep VERSION and installer\WordMD.iss aligned before each release
 
+## The ask
+
+<<<UNTRUSTED PUNCHLIST CONTENT
+(S)(H) Keep `VERSION` and `installer\WordMD.iss` aligned before each release. Implemented 2026-07-30 with v1.6.0: the version is single-sourced from the repo-root `VERSION` file (the csproj reads it at build time, `WordMD.iss` reads it at installer compile time, and the app's status bar and About dialog display the assembly version instead of hardcoded strings), and the new `.github/workflows/release.yml` fails the release build if the tag does not match `VERSION`
+UNTRUSTED PUNCHLIST CONTENT>>>
+
+Provenance: `spec/punchlist.md` Next (Up Soon), line dated 2026-07-30. Filed by commit `deb8c81` ("emily: draft specs for code-signing decision and VERSION/installer alignment", 2026-07-29). Section retrofitted 2026-08-02.
+
 ## Problem
 
 The version number exists in two places that nothing keeps in sync: the root `VERSION` file and `#define MyAppVersion` inside `installer\WordMD.iss`. Today they agree (both `1.5.0`), but agreement is enforced by a human remembering, not by tooling.
