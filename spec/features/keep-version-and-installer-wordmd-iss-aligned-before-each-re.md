@@ -2,6 +2,7 @@
 spec: 10025
 feature: keep-version-and-installer-wordmd-iss-aligned-before-each-re
 status: ready
+pr: https://github.com/ReboundMan/ReboundMan-WordMD/pull/1
 revised: 2026-07-31 (JJ review round 1); 2026-07-31 (Emily round 1 answer: single source verified already implemented, one checklist line remains)
 agent: emily
 drafted: 2026-07-29
