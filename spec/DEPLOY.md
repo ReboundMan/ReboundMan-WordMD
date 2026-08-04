@@ -45,7 +45,7 @@ Expected installer output: `dist\WordMD-Setup-<version>.exe`. The installer vers
 
 ## Release checklist
 
-1. Update the version in `VERSION` and `installer\WordMD.iss` together.
+1. Bump `VERSION`; the installer and app binary both read it at build.
 2. Update `CHANGELOG.md`.
 3. Run the build from source steps above.
 4. Smoke test the generated installer on a clean Windows profile when practical.
