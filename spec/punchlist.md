@@ -14,7 +14,7 @@
 - [ ] 2026-08-03 — (S?)(L?) Add a nag screen (or some other deliberate irritation) so that once Stripe integration lands there is something concrete paying removes. Form unspecified (banner, modal, watermark); built ahead of Stripe, which is still in progress. _(vault: processed/2026-08-03-wordmd-nag-screen-stripe-removal.md)_
 
 - [ ] (M)(M) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs). Spec drafted 2026-08-05 (features/10065-print-from-canonical-markdown-out-of-band.md, status: draft, awaiting review).
-- [ ] (S)(M) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues.
+- [ ] (S)(M) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues. Spec drafted 2026-08-07 (features/10070-wordmd-feedback-hub-submission.md, status: draft, awaiting review; the named hub does not exist, so the spec proposes reboundman.com's existing /api/feedback instead, and the review fleet found that endpoint's /admin inbox is publicly readable, so the spec now blocks on two reboundman.com fixes filed there).
 - [x] (S?)(L?) Consider a release smoke-test checklist that can be run on a clean Windows VM. removed 2026-07-28 (triage)
 
 ## Bugs
