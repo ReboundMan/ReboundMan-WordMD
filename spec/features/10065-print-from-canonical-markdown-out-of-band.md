@@ -1,7 +1,7 @@
 ---
 spec: 10065
 feature: print-from-canonical-markdown-out-of-band
-status: draft
+status: ready
 agent: emily
 drafted: 2026-08-05
 revised: 2026-08-05 (Emily: Spec Review Fleet fixes applied — Sage found Behavior contradicted its own Open Question over whether `flush()` should stay, traced `flush()` and confirmed it does write back to `Doc.body` and must stay; also flagged an unhandled cleanup-on-failure gap and a new concurrency window)
@@ -76,5 +76,7 @@ Options:
 - **(b) Downgrade to L priority, revisit if/when virtualization is actually proposed.** Cost: the live-DOM-clone approach keeps working exactly as it does today, indefinitely, until something changes it. Risk: if a Milkdown dependency bump ever silently introduces virtualization (plausible — it's a library update, not necessarily a deliberate architectural decision this repo's own team makes), the truncation bug could ship without anyone connecting it to a dependency bump.
 
 **Emily's recommendation: (a), unchanged from the punchlist's own M.** The fix itself is small and self-contained (Behavior above, no new dependencies, reuses existing code), and the downside of option (b) — a silent, hard-to-diagnose truncation bug arriving via an unrelated dependency bump — is disproportionate to the modest cost of shipping the fix now while it's cheap and well-understood.
+
+- **JJ, 2026-08-08:** Agree on 1b
 
 **Resolved at round-1 review (was Open question 2): does `Doc.flush()` need to run before reading `d.body` for print?** Yes — traced and settled, no longer open. See Behavior item 2 and the round-1 fix note there: `flush()` (`doc.ts:234-249`) writes the live editor's current markdown into `Doc.body`, making it canonical; `getDocumentText()` depends on the same call. It stays in the print path unconditionally.
