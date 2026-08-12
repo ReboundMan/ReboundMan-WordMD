@@ -7,6 +7,7 @@ import {
 } from "./cm-commands";
 import { applyMilkdownCommand, FormatPayload } from "./mk-commands";
 import { doPrint } from "./print";
+import { MilkdownHost } from "./milkdown-host";
 
 const docs = new Map<string, Doc>();
 let activeDocId: string | null = null;
@@ -175,15 +176,39 @@ on("print", async (p: { mode?: string; title?: string }) => {
     title: p?.title,
     getRawText: () => raw,
     getFormattedNode: async () => {
-      // Formatted print intentionally omits front-matter (source print includes
-      // it). Only push the canonical body into Milkdown when the formatted pane
-      // is stale (the user edited in source this session); otherwise reading the
-      // live render avoids mutating the editor's caret/scroll/selection.
+      // Renders from canonical Markdown out-of-band (spec 10065) rather than
+      // cloning the live editing view's DOM, so print stays correct regardless
+      // of any future viewport-virtualizing or lazy-loading rendering strategy.
+      // flush() stays unconditional: it's what makes d.body canonical at all
+      // (getDocumentText() depends on the same call), and this path reads
+      // d.body directly rather than through getDocumentText().
       d.flush();
-      if (d.lastEditedPane === "source") {
-        await d.mk.setMarkdown(d.body);
+      const container = document.createElement("div");
+      // opacity: 0 at the viewport origin, not an extreme physical offset --
+      // avoids any future lazy/IntersectionObserver rendering heuristic that
+      // would treat a far-off-screen element as never near enough to render.
+      container.style.position = "fixed";
+      container.style.top = "0";
+      container.style.left = "0";
+      container.style.opacity = "0";
+      container.style.pointerEvents = "none";
+      document.body.appendChild(container);
+      let host: MilkdownHost | null = null;
+      try {
+        host = new MilkdownHost({
+          parent: container,
+          initialMarkdown: d.body,
+          onUserChange: () => {},
+        });
+        await host.whenReady();
+        return host.getRenderedNodeClone();
+      } catch (err) {
+        console.error("formatted print render failed", err);
+        return null;
+      } finally {
+        host?.destroy();
+        container.remove();
       }
-      return d.mk.getRenderedNodeClone();
     },
   });
 });
