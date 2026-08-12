@@ -2,6 +2,7 @@
 spec: 10065
 feature: print-from-canonical-markdown-out-of-band
 status: ready
+pr: https://github.com/ReboundMan/ReboundMan-WordMD/pull/3
 agent: emily
 drafted: 2026-08-05
 revised: 2026-08-05 (Emily: Spec Review Fleet fixes applied — Sage found Behavior contradicted its own Open Question over whether `flush()` should stay, traced `flush()` and confirmed it does write back to `Doc.body` and must stay; also flagged an unhandled cleanup-on-failure gap and a new concurrency window)
