@@ -64,7 +64,15 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        // Absolute path, not relative: this is an unpackaged app
+        // (WindowsPackageType=None), so a relative path resolves against
+        // Environment.CurrentDirectory, which varies by launch method
+        // (pinned taskbar, Start Menu, double-click, "Open with") and can
+        // silently fail to find the file. The taskbar and launch-button
+        // icons come from the exe's embedded resource (ApplicationIcon in
+        // the csproj, baked in at compile time) and were never affected;
+        // Alt-Tab renders the live window's runtime icon, set here.
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         StatusVersion.Text = "v" + AppVersion;
 
         _settings.Load();
