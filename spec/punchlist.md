@@ -19,7 +19,12 @@
 
 ## Bugs
 
+- [ ] 2026-08-11 — Misspelled words get the red squiggly but right-clicking offers no correction menu. **Same root cause as the copy/paste bug below**; spell-check detection is separate from the context menu that surfaces its suggestions, which is why the squiggly still renders. _(vault: processed/2026-08-11-wordmd-spellcheck-no-context-menu.md)_
+- [ ] 2026-08-10 — Right-click brings up no copy or paste in the editor. **Root cause found 2026-08-11:** `src\WordMD\MainWindow.xaml.cs:174` sets `AreDefaultContextMenusEnabled = debug` where `debug = Debugger.IsAttached`, so shipped builds have WebView2's context menu disabled outright. That one setting provides copy/paste *and* spelling suggestions, so this and the bug above are a single fix.
 
+  Cheap confirmation before changing anything: run with a debugger attached, where the setting is already `true`, and both behaviors should work.
+
+  Do **not** simply flip it to `true`. It was deliberately gated (see the comment on line 170) because default context menus widen the abuse surface against the privileged bridge, which came out of the v1.5.0 WebView hardening. The fix is a curated menu: set `AreDefaultContextMenusEnabled = true` (required for the event to fire at all) and handle `CoreWebView2.ContextMenuRequested` to remove the entries that motivated the gate (Inspect, View source, Save as) while keeping copy/paste/cut, select all, and the spelling suggestions. Leave `AreDevToolsEnabled` gated on the debugger as it is today. Worth a Hawk pass, since it partially reopens a deliberate hardening decision.
 - [ ] 2026-08-05 — WordMD bug: the edit button in front matter shrinks the window _(vault: processed/2026-08-05-wordmd-frontmatter-edit-shrinks-window.md)_
 - [ ] 2026-07-30 — The icon is correct in the taskbar and on the launch button, but wrong when alt-tabbing between applications. Two different Windows icon surfaces, likely the same icon resource not wired to both. _(vault: processed/2026-07-30-wordmd-taskbar-alttab-icon-bug.md)_
 
