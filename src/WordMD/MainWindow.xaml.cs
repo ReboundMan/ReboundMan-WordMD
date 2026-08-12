@@ -1159,8 +1159,11 @@ public sealed partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 8, 0, 0),
             });
-            const string tipDisclaimerText = "Opens Stripe in your browser. WordMD never sees your payment details.";
-            var tip = new Button { Content = "Buy me a coffee" };
+            // "Frosty beverage" matches the live Stripe product name deliberately
+            // (spec\features\support-wordmd-tip-jar.md), so nobody clicks "coffee"
+            // and lands on checkout showing different words than what sent them there.
+            const string tipDisclaimerText = "Opens Stripe in your browser (default $20, adjustable). WordMD never sees your payment details.";
+            var tip = new Button { Content = "Buy me a frosty beverage" };
             tip.Click += (_, _) => OpenExternal(SupportLinks.TipPaymentLink);
             // DescribedBy is get-only from code-behind in WinUI 3 (collection-typed
             // attached properties like it are only settable declaratively from XAML),
