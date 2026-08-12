@@ -19,7 +19,7 @@ internal static class SupportLinks
     /// While empty, the About dialog omits its support section entirely, so
     /// shipping ahead of the Stripe setup shows no broken affordance.
     /// </summary>
-    public const string TipPaymentLink = "";
+    public const string TipPaymentLink = "https://buy.stripe.com/00waEZbbAcDwf3E6JMasg01";
 
     public static bool TipEnabled => !string.IsNullOrWhiteSpace(TipPaymentLink);
 

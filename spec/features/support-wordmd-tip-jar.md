@@ -1,8 +1,9 @@
 ---
 feature: support-wordmd-tip-jar
-status: built (pending Stripe configuration)
+status: live
 agent: claude
 drafted: 2026-08-12
+wired: 2026-08-12 (JJ created the Stripe product and Payment Link; both code touchpoints updated same day)
 source: JJ direct ask, 2026-08-12 ("similar to BMAC, something in the about screen that if you like the product as much as I do, feel free to show me your thanks")
 size: S
 priority: H
@@ -45,10 +46,12 @@ Creating products and links requires dashboard access with financial credentials
 5. **Copy the link URL** and put it in the two places below.
 6. **Test with a real $1 charge, then refund it.** This is the same exit test `PAYMENTS-JJ.md` milestone M0 already defines. Confirm the receipt arrives, the statement descriptor reads as expected, and the `client_reference_id` shows on the Checkout Session.
 
-## The two code touchpoints
+## The two code touchpoints — DONE 2026-08-12
 
-1. **`src/WordMD/SupportLinks.cs`** — set `TipPaymentLink` to the Payment Link URL. While it is empty the About dialog omits its whole support section, so the app can ship before Stripe is configured without showing a dead button. That is the intended default, not a placeholder to rush.
-2. **`reboundman.com/wordmd.html`** — a `<section id="thanks">` block sits commented out with the substitution marked. Uncomment it and replace `STRIPE_PAYMENT_LINK_URL`. It is commented rather than left with a placeholder `href` so the published page cannot ship a broken link.
+Payment Link: `https://buy.stripe.com/00waEZbbAcDwf3E6JMasg01`.
+
+1. **`src/WordMD/SupportLinks.cs`** — `TipPaymentLink` set to the link above. `TipEnabled` now evaluates true, so the About dialog's support section is live.
+2. **`reboundman.com/wordmd.html`** — the `#thanks` section is uncommented; JJ had already wired it directly with the same link (confirmed matching before the C# side was touched).
 
 ## Attribution
 
@@ -65,5 +68,11 @@ Verified against `docs.stripe.com/payment-links/url-parameters` (2026-08-12): `c
 
 ## Verified / not verified
 
-- **Verified:** the `client_reference_id` contract against current Stripe docs; the reboundman.com page renders, has no horizontal overflow, resolves real theme tokens in both light and dark, contains no live placeholder link, and its feedback form builds a correctly encoded, correctly labelled GitHub issue URL (including the empty-title guard and the over-length fallback).
-- **Not verified:** the C# About-dialog changes have **not been compiled**. This machine has the .NET 8 *runtime* but no SDK, so `dotnet build` cannot run; CI (`ci.yml`) compiles on push and is the check. The tip section is also unexercised end to end because no Payment Link exists yet.
+- **Verified:** the `client_reference_id` contract against current Stripe docs; the reboundman.com page renders, has no horizontal overflow, resolves real theme tokens in both light and dark, and its feedback form builds a correctly encoded, correctly labelled GitHub issue URL (including the empty-title guard and the over-length fallback). The live `#thanks` section on reboundman.com/wordmd.html confirmed pointing at the same Payment Link before the C# side was edited.
+- **Not verified:** the C# About-dialog change (`TipPaymentLink` now non-empty) has **not been compiled**. This machine has the .NET 8 *runtime* but no SDK, so `dotnet build` cannot run; CI (`ci.yml`) compiling on push after this commit is the check. Also not yet done: JJ's own $1-test-and-refund exit test (step 6 above) — worth doing once the CI-compiled build is installed, not blocking this commit.
+
+## Remaining standards debt (unchanged)
+
+`PAYMENTS-JJ.md`'s catalog still has no `wordmd_tip` row (see above); this is unaffected by wiring the link and remains a separate edit in a `JJProjectStatus` session.
+
+Separately, `spec/punchlist.md`'s Ideas/Backlog still carries a 2026-08-03 nag-screen item premised on "once Stripe integration lands there is something concrete paying removes" — a pay-to-remove-friction model. That is not what shipped: WordMD stays free with an optional tip, no friction to remove. That backlog item is now stale relative to the shipped design and worth JJ's call on whether to drop it, not silently edited here.

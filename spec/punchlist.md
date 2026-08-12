@@ -4,8 +4,6 @@
 
 ## Now (In Progress)
 
-- [ ] (S)(H) Configure the Stripe tip jar so the About dialog and product page can show it. Code is built and merged 2026-08-12; both surfaces stay hidden until a Payment Link exists. Runbook and the two touchpoints: `spec/features/support-wordmd-tip-jar.md`. Needs JJ in the Stripe dashboard (cannot be automated) before v2 ships with a visible tip jar.
-
 ## Next (Up Soon)
 
 - [ ] (M)(H) Decide code-signing path for the Windows installer. Spec drafted 2026-07-29 (features/decide-code-signing-path-for-the-windows-installer.md, status: draft, awaiting review).
@@ -13,7 +11,7 @@
 
 ## Ideas / Backlog
 
-- [ ] 2026-08-03 — (S?)(L?) Add a nag screen (or some other deliberate irritation) so that once Stripe integration lands there is something concrete paying removes. Form unspecified (banner, modal, watermark); built ahead of Stripe, which is still in progress. _(vault: processed/2026-08-03-wordmd-nag-screen-stripe-removal.md)_
+- [ ] 2026-08-03 — (S?)(L?) **Parked 2026-08-12 (JJ):** "I don't think we want to piss off people until we get a real product SKU." The Stripe integration that shipped 2026-08-12 is a free-forever tip jar, not a paid removal, so there is nothing yet for a nag screen to gate. Revisit only if/when `wordmd_pro_lifetime` (the $29.99 license in `PAYMENTS-JJ.md`, targeted October) actually ships — that is a real SKU a nag could point at. Original ask: add a nag screen (or some other deliberate irritation) so that once Stripe integration lands there is something concrete paying removes. _(vault: processed/2026-08-03-wordmd-nag-screen-stripe-removal.md)_
 
 - [ ] (M)(M) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs). Spec drafted 2026-08-05 (features/10065-print-from-canonical-markdown-out-of-band.md, status: draft, awaiting review).
 - [ ] (S)(M) Evaluate whether in-app feedback should submit to the ReboundMan feedback hub instead of only saving locally and prefilling GitHub Issues. Spec drafted 2026-08-07 (features/10070-wordmd-feedback-hub-submission.md, status: draft, awaiting review; the named hub does not exist, so the spec proposes reboundman.com's existing /api/feedback instead, and the review fleet found that endpoint's /admin inbox is publicly readable, so the spec now blocks on two reboundman.com fixes filed there).
@@ -32,6 +30,7 @@
 
 ## Done
 
+- [x] (S)(H) Configure the Stripe tip jar, 2026-08-12. JJ created the product and Payment Link in Stripe; `SupportLinks.TipPaymentLink` and reboundman.com/wordmd.html both now point at `https://buy.stripe.com/00waEZbbAcDwf3E6JMasg01`, distinguished by `client_reference_id` (`wordmd-about-<version>` in-app, `wordmd-web` on the site). The About dialog's tip section is now live. Runbook: `spec/features/support-wordmd-tip-jar.md`.
 - [x] (S)(H) Make front-matter editable, 2026-07-30. Redesigned by JJ from the whole-buffer model to a banner-pane model: the existing banner expands via caret, and an Edit checkbox (visible only when expanded) swaps the read-only YAML for a textarea. Pane sync and scroll sync untouched; front-matter-only saves leave the body byte-clean. Fleet code-review panel (Hawk, Bolt, Rookie, Lens, Beacon) ran same day; all findings applied (fence-escape guard, persistent removal banner, Escape cancel, accessible toggle, throttled dirty IPC). Spec updated (features/make-front-matter-editable-in-the-source-pane.md). No test harness added; verified by driving the built bundle in a browser.
 - [x] Print support: File → Print… (Ctrl+P, follows current view), Print Formatted…, and Print Source….
 - [x] Added ProjectPatterns standards docs and repo metadata.
