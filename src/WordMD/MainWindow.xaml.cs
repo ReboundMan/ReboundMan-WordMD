@@ -68,10 +68,14 @@ public sealed partial class MainWindow : Window
         // (WindowsPackageType=None), so a relative path resolves against
         // Environment.CurrentDirectory, which varies by launch method
         // (pinned taskbar, Start Menu, double-click, "Open with") and can
-        // silently fail to find the file. The taskbar and launch-button
-        // icons come from the exe's embedded resource (ApplicationIcon in
-        // the csproj, baked in at compile time) and were never affected;
-        // Alt-Tab renders the live window's runtime icon, set here.
+        // silently fail to find the file -- SetIcon has no return value or
+        // exception to signal that, it just leaves the window's icon unset.
+        // AppContext.BaseDirectory is always the running exe's own folder,
+        // regardless of launch method, so this can't miss the same way.
+        // The taskbar and launch-button icons come from a *different*
+        // mechanism -- the exe's embedded resource (ApplicationIcon in the
+        // csproj, baked in at compile time) -- and were never affected;
+        // Alt-Tab instead renders the live window's runtime icon, set here.
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
         StatusVersion.Text = "v" + AppVersion;
 
