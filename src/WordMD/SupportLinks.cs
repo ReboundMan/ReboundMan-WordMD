@@ -9,44 +9,24 @@ internal static class SupportLinks
     public const string ProductPage = "https://reboundman.com/wordmd.html";
 
     /// <summary>
-    /// Stripe Payment Link for the optional tip jar, or empty when not yet
-    /// configured. Setup runbook: spec\features\support-wordmd-tip-jar.md.
+    /// Where the tip button sends the user, or empty when not yet configured.
+    /// Setup runbook: spec\features\support-wordmd-tip-jar.md.
     ///
-    /// This is a public, hosted Stripe URL, not a credential; the house payments
-    /// standard is explicit that apps hold no Stripe keys, and this respects it
-    /// (WordMD only opens a URL in the browser and never handles payment data).
+    /// Deliberately NOT the raw Stripe Payment Link. A URL compiled into a signed
+    /// installer is effectively permanent once shipped (there is no update
+    /// channel that rewrites it retroactively on machines that already have
+    /// WordMD installed), so this points at a small reboundman.com redirect
+    /// (Caddyfile, "WordMD tip jar redirect") that owns the real Stripe URL and
+    /// the wordmd-app client_reference_id attribution tag. Repointing the tip
+    /// jar later, or retiring it, is then a one-line website change instead of
+    /// a new app release. This is a public URL, not a credential; the house
+    /// payments standard's "apps get NO Stripe keys" rule is respected either
+    /// way (WordMD only ever opens a URL in the browser).
     ///
     /// While empty, the About dialog omits its support section entirely, so
     /// shipping ahead of the Stripe setup shows no broken affordance.
     /// </summary>
-    public const string TipPaymentLink = "https://buy.stripe.com/00waEZbbAcDwf3E6JMasg01";
+    public const string TipPaymentLink = "https://reboundman.com/wordmd-tip";
 
     public static bool TipEnabled => !string.IsNullOrWhiteSpace(TipPaymentLink);
-
-    /// <summary>
-    /// Appends attribution so tips can be told apart by where they came from.
-    /// <c>client_reference_id</c> lands on the Stripe Checkout Session and its
-    /// completion webhook. Stripe accepts alphanumerics, dashes and underscores
-    /// up to 200 characters and silently drops anything else, so the value is
-    /// sanitised here rather than trusting the caller.
-    /// </summary>
-    public static string BuildTipUrl(string source, string version)
-    {
-        if (!TipEnabled) return string.Empty;
-        var reference = Sanitize($"wordmd-{source}-{version}");
-        var separator = TipPaymentLink.Contains('?') ? "&" : "?";
-        return $"{TipPaymentLink}{separator}client_reference_id={reference}";
-    }
-
-    private static string Sanitize(string value)
-    {
-        var sb = new System.Text.StringBuilder(value.Length);
-        foreach (var c in value)
-        {
-            sb.Append(char.IsLetterOrDigit(c) || c == '-' || c == '_' ? c : '-');
-        }
-        // Stripe's cap is 200; nothing here approaches it, but truncate rather
-        // than let a future longer source string get the whole value dropped.
-        return sb.Length <= 200 ? sb.ToString() : sb.ToString(0, 200);
-    }
 }

@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using Windows.Storage.Pickers;
@@ -1158,14 +1159,23 @@ public sealed partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 8, 0, 0),
             });
+            const string tipDisclaimerText = "Opens Stripe in your browser. WordMD never sees your payment details.";
             var tip = new Button { Content = "Buy me a coffee" };
-            tip.Click += (_, _) => OpenExternal(SupportLinks.BuildTipUrl("about", AppVersion));
+            tip.Click += (_, _) => OpenExternal(SupportLinks.TipPaymentLink);
+            // DescribedBy is get-only from code-behind in WinUI 3 (collection-typed
+            // attached properties like it are only settable declaratively from XAML),
+            // so HelpText is the code-settable equivalent: a screen-reader user who
+            // tabs straight to the button, without reading the paragraph below it,
+            // still gets the payment-safety note.
+            AutomationProperties.SetHelpText(tip, tipDisclaimerText);
             panel.Children.Add(tip);
+            // TextFillColorSecondaryBrush (not a flat Opacity multiply) so this stays
+            // readable under light, dark, and high-contrast themes alike.
             panel.Children.Add(new TextBlock
             {
-                Text = "Opens Stripe in your browser. WordMD never sees your payment details.",
+                Text = tipDisclaimerText,
                 TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.7,
+                Foreground = SecondaryTextBrush(),
                 FontSize = 12,
             });
         }
@@ -1180,15 +1190,42 @@ public sealed partial class MainWindow : Window
         await dlg.ShowAsync();
     }
 
-    /// <summary>Open a URL in the user's default browser, never in-app.</summary>
+    /// <summary>
+    /// Open a URL in the user's default browser, never in-app. All current callers pass
+    /// hardcoded or sanitised URLs, but the scheme check is enforced here too (matching
+    /// the http/https-only rule <see cref="IsTrustedEditorUri"/>'s caller already applies
+    /// to WebView2 navigation) so a future caller can't accidentally hand this a
+    /// non-http(s) scheme straight through to ShellExecute.
+    /// </summary>
     private static void OpenExternal(string url)
     {
         if (string.IsNullOrWhiteSpace(url)) return;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
         }
         catch { }
+    }
+
+    /// <summary>
+    /// De-emphasised text brush that actually resolves per-theme, unlike a flat Opacity
+    /// multiply (the same percentage against a light vs. dark base color yields different
+    /// contrast ratios, so a hardcoded Opacity is never theme-safe). Application.Current
+    /// .Resources[key] would silently return the Light value even in Dark theme (it is
+    /// not a live {ThemeResource} binding), so this reads the correct theme's dictionary
+    /// explicitly, using the same ActualTheme source of truth ApplyShellTheme already uses.
+    /// </summary>
+    private Microsoft.UI.Xaml.Media.Brush SecondaryTextBrush()
+    {
+        var themeKey = RootGrid.ActualTheme == ElementTheme.Dark ? "Dark" : "Light";
+        var themeDict = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[themeKey];
+        return (Microsoft.UI.Xaml.Media.Brush)themeDict["TextFillColorSecondaryBrush"];
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)
