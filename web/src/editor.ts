@@ -200,8 +200,18 @@ on("print", async (p: { mode?: string; title?: string }) => {
           initialMarkdown: d.body,
           onUserChange: () => {},
         });
-        await host.whenReady();
-        return host.getRenderedNodeClone();
+        // Race against a timeout rather than awaiting whenReady() bare: a
+        // pathological document (e.g. deeply nested blockquotes/lists/tables)
+        // could drive catastrophic parse/layout time and hang construction
+        // instead of rejecting, which would skip this try's return and leak
+        // the container/instance forever (finally still runs either way, but
+        // only once this await settles). Reviewed: Hawk, 2026-08-12.
+        const timedOut = Symbol("print-render-timeout");
+        const result = await Promise.race([
+          host.whenReady().then(() => host!.getRenderedNodeClone()),
+          new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), 5000)),
+        ]);
+        return result === timedOut ? null : result;
       } catch (err) {
         console.error("formatted print render failed", err);
         return null;
