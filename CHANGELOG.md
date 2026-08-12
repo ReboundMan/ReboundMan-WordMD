@@ -6,15 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-12
+
+The first code-signed release: `WordMD-Setup-2.0.0.exe` and `WordMD.exe` are both Authenticode-signed (`CN=ReboundMan.com LLC`, Azure Artifact Signing, Public Trust), so a clean Windows profile should no longer trip the SmartScreen "Windows protected your PC" warning on first run.
+
 ### Added
 
-- A richer About dialog (Help > About WordMD) with links to the product page and repo, and an optional tip jar. WordMD is free and stays free; the tip is an optional thanks and appears only once a Stripe Payment Link is configured, so no half-wired button can ship. WordMD holds no payment keys and never sees payment details: the button opens a Stripe-hosted page in your browser. Setup runbook: `spec\features\support-wordmd-tip-jar.md`.
+- A richer About dialog (Help > About WordMD) with links to the product page and repo, and an optional tip jar. WordMD is free and stays free; the tip is an optional thanks and opens a Stripe-hosted page in your browser. WordMD holds no payment keys and never sees payment details. Setup runbook: `spec\features\support-wordmd-tip-jar.md`.
 - A product page at [reboundman.com/wordmd.html](https://reboundman.com/wordmd.html): why the app exists, what it does, the download, and a feedback form that opens a prefilled GitHub issue.
-- Code signing for release builds via Azure Artifact Signing (`CN=ReboundMan.com LLC`, Public Trust). `tools\build-signed-release.ps1` builds, signs, and verifies both the app executable and the installer, then writes the SHA-256 file. Signing runs locally; `spec\DEPLOY.md` carries the checklist. Not yet exercised on a real release: the first signed installer is the acceptance run, so the currently published v1.6.0 remains unsigned.
+- Code signing for release builds via Azure Artifact Signing. `tools\build-signed-release.ps1` builds, signs, and verifies both the app executable and the installer against the expected signer identity (not just chain validity), then writes the SHA-256 file. Signing runs locally, by design: no signing credential exists in CI. `spec\DEPLOY.md` carries the release checklist.
 
 ### Changed
 
-- The release workflow no longer attaches an installer. It validates that the tag matches `VERSION` and that the build chain compiles, because CI holds no signing credential and could only publish an unsigned binary.
+- Formatted-mode print no longer clones the live editing view's DOM. It renders from the document's canonical Markdown into a detached, offscreen view created solely for the print job, so print output stays correct regardless of any future viewport-virtualizing or lazy-loading rendering strategy the live view might adopt.
+- The release workflow no longer attaches an installer to a GitHub release. It validates that the tag matches `VERSION` and that the build chain compiles, because CI holds no signing credential and could only ever publish an unsigned binary; the release workflow now runs the same build script CI and local releases share (`-SkipSigning` for CI), so the two can't silently drift apart.
+
+### Fixed
+
+- Alt-Tab showed the wrong icon on some launch paths (pinned taskbar, Start Menu, double-click) even though the taskbar and launch-button icons were always correct. The runtime icon was set from a path resolved against the current working directory, which varies by how an unpackaged app is launched; it now anchors to the running executable's own folder.
+- The offscreen print view is now raced against a 5-second timeout, so a pathological document can no longer hang print construction and leak the offscreen instance instead of failing cleanly.
 
 ## [1.6.0] - 2026-07-30
 
