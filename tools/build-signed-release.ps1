@@ -77,8 +77,15 @@ function Assert-Path([string] $Path, [string] $What) {
 # with a different Windows SDK installed.
 function Resolve-Tool([string] $Explicit, [string] $Command, [string[]] $Candidates, [string] $What) {
     if ($Explicit) { Assert-Path $Explicit $What; return $Explicit }
-    $onPath = Get-Command $Command -ErrorAction SilentlyContinue
-    if ($onPath) { return $onPath.Source }
+    # $Command is '' for tools with no PATH entry point (the dlib is a plain .dll,
+    # not an executable). Get-Command's -Name parameter is [ValidateNotNullOrEmpty()],
+    # so passing '' throws a parameter-binding error that -ErrorAction cannot
+    # suppress (validation errors happen before the cmdlet body runs) -- skip the
+    # PATH lookup entirely rather than call Get-Command with nothing to look up.
+    if ($Command) {
+        $onPath = Get-Command $Command -ErrorAction SilentlyContinue
+        if ($onPath) { return $onPath.Source }
+    }
     $hit = $Candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
     if (-not $hit) { throw "$What not found. Install it or pass the path explicitly." }
     return $hit
