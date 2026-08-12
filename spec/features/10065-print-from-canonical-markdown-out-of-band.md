@@ -7,7 +7,7 @@ drafted: 2026-08-05
 revised: 2026-08-05 (Emily: Spec Review Fleet fixes applied — Sage found Behavior contradicted its own Open Question over whether `flush()` should stay, traced `flush()` and confirmed it does write back to `Doc.body` and must stay; also flagged an unhandled cleanup-on-failure gap and a new concurrency window)
 source: spec/punchlist.md (Ideas)
 size: M
-priority: M
+priority: L
 ---
 # Print from canonical Markdown, out-of-band
 

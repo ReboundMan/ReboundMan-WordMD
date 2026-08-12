@@ -20,7 +20,7 @@
 ## Bugs
 
 - [ ] 2026-08-11 — Misspelled words get the red squiggly but right-clicking offers no correction menu. **Same root cause as the copy/paste bug below**; spell-check detection is separate from the context menu that surfaces its suggestions, which is why the squiggly still renders. _(vault: processed/2026-08-11-wordmd-spellcheck-no-context-menu.md)_
-- [ ] 2026-08-10 — Right-click brings up no copy or paste in the editor. **Root cause found 2026-08-11:** `src\WordMD\MainWindow.xaml.cs:174` sets `AreDefaultContextMenusEnabled = debug` where `debug = Debugger.IsAttached`, so shipped builds have WebView2's context menu disabled outright. That one setting provides copy/paste *and* spelling suggestions, so this and the bug above are a single fix.
+- [ ] 2026-08-10 — Right-click brings up no copy or paste in the editor. **Root cause found 2026-08-11:** `src\WordMD\MainWindow.xaml.cs:174` sets `AreDefaultContextMenusEnabled = debug` where `debug = Debugger.IsAttached`, so shipped builds have WebView2's context menu disabled outright. That one setting provides copy/paste *and* spelling suggestions, so this and the bug above are a single fix. _(vault: processed/2026-08-10-wordmd-no-right-click-copy-paste.md)_
 
   Cheap confirmation before changing anything: run with a debugger attached, where the setting is already `true`, and both behaviors should work.
 
