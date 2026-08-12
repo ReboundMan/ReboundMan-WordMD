@@ -4,6 +4,8 @@
 
 ## Now (In Progress)
 
+- [ ] (S)(H) Configure the Stripe tip jar so the About dialog and product page can show it. Code is built and merged 2026-08-12; both surfaces stay hidden until a Payment Link exists. Runbook and the two touchpoints: `spec/features/support-wordmd-tip-jar.md`. Needs JJ in the Stripe dashboard (cannot be automated) before v2 ships with a visible tip jar.
+
 ## Next (Up Soon)
 
 - [ ] (M)(H) Decide code-signing path for the Windows installer. Spec drafted 2026-07-29 (features/decide-code-signing-path-for-the-windows-installer.md, status: draft, awaiting review).

@@ -1124,7 +1124,71 @@ public sealed partial class MainWindow : Window
 
     private async void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
-        await ShowErrorAsync("About WordMD", $"WordMD (Dr Word) v{AppVersion}\n\nA friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.\n\nhttps://github.com/ReboundMan/ReboundMan-WordMD");
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"WordMD (Dr Word) v{AppVersion}",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "A friendly, Word-like Markdown editor for Windows.\nThe doctor is in. Markdown made painless.",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new HyperlinkButton
+        {
+            Content = "reboundman.com/wordmd",
+            NavigateUri = new Uri(SupportLinks.ProductPage),
+            Padding = new Thickness(0),
+        });
+        panel.Children.Add(new HyperlinkButton
+        {
+            Content = "View on GitHub",
+            NavigateUri = new Uri(SupportLinks.GitHub),
+            Padding = new Thickness(0),
+        });
+
+        // Optional tip jar. Hidden entirely until a Stripe Payment Link is
+        // configured, so no half-wired affordance can ship.
+        if (SupportLinks.TipEnabled)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "WordMD is free, and stays free. If it earns a place in your day and you feel like saying thanks, there's a tip jar.",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 8, 0, 0),
+            });
+            var tip = new Button { Content = "Buy me a coffee" };
+            tip.Click += (_, _) => OpenExternal(SupportLinks.BuildTipUrl("about", AppVersion));
+            panel.Children.Add(tip);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Opens Stripe in your browser. WordMD never sees your payment details.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.7,
+                FontSize = 12,
+            });
+        }
+
+        var dlg = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = "About WordMD",
+            Content = panel,
+            CloseButtonText = "Close",
+        };
+        await dlg.ShowAsync();
+    }
+
+    /// <summary>Open a URL in the user's default browser, never in-app.</summary>
+    private static void OpenExternal(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)
@@ -1190,14 +1254,7 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
-    private void MenuGitHub_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/ReboundMan/ReboundMan-WordMD") { UseShellExecute = true });
-        }
-        catch { }
-    }
+    private void MenuGitHub_Click(object sender, RoutedEventArgs e) => OpenExternal(SupportLinks.GitHub);
 
     // ---- Feedback / bug reporting ----
     private readonly FeedbackService _feedback = new();
