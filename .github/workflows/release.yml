@@ -1,16 +1,26 @@
-name: Release installer
+name: Release build validation
 
-# Builds and attaches the installer when a GitHub release is published.
-# Fails fast if the release tag does not match the repo VERSION file, so a
-# release can never ship under a number the code does not carry (the v1.4.6 /
-# v1.5.0 latest-badge mixup class of problem).
+# Validates a published release: the tag must match VERSION, and the full
+# web bundle -> publish -> installer chain must compile. Fails fast on a tag
+# mismatch so a release can never ship under a number the code does not carry
+# (the v1.4.6 / v1.5.0 latest-badge mixup class of problem).
+#
+# This workflow does NOT attach the installer. As of spec 10024 (Open question 4,
+# resolved local-only) the shipped installer is Authenticode-signed with Azure
+# Artifact Signing, and no signing credential exists in GitHub, so CI could only
+# ever produce an UNSIGNED build. Publishing that would defeat the signing work
+# and silently hand users the warning-triggering binary. The installer here is
+# compiled unsigned purely to prove the chain still builds, then discarded.
+#
+# The real release artifact comes from tools\build-signed-release.ps1 on JJ's
+# machine, uploaded per spec\DEPLOY.md.
 
 on:
   release:
     types: [published]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   installer:
@@ -21,13 +31,17 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      # Tag arrives via env, not `${{ }}` interpolation into the script body:
+      # release names are attacker-influencable text and interpolation splices
+      # them straight into the shell.
       - name: Verify tag matches VERSION
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
-          $tag = '${{ github.event.release.tag_name }}'
-          if ($tag -ne "v$version") {
-            Write-Error "Release tag '$tag' does not match VERSION 'v$version'. Align them and re-release."
+          if ($env:RELEASE_TAG -ne "v$version") {
+            Write-Error "Release tag '$($env:RELEASE_TAG)' does not match VERSION 'v$version'. Align them and re-release."
             exit 1
           }
 
@@ -43,35 +57,32 @@ jobs:
           cache: npm
           cache-dependency-path: web\package-lock.json
 
-      - name: Build web bundle
-        working-directory: web
-        run: |
-          npm ci
-          npm run build
-
-      - name: Publish WordMD
-        run: dotnet publish src\WordMD\WordMD.csproj -c Release -r win-x64 -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -p:PublishTrimmed=false
-
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
-      - name: Compile installer
+      # Runs the SAME script the real release uses, with -SkipSigning. Re-listing
+      # the publish arguments and the TFM path here would duplicate the release
+      # chain, and a duplicate drifts silently: CI would go green while validating
+      # a build that no longer matches what actually ships. -SkipSigning produces
+      # WordMD-Setup-<version>-UNSIGNED.exe, which cannot be confused with a
+      # releasable artifact and is never uploaded.
+      - name: Validate release chain (unsigned)
         shell: pwsh
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc installer\WordMD.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: .\tools\build-signed-release.ps1 -SkipSigning
 
-      - name: Compute SHA-256
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem dist\WordMD-Setup-*.exe | Select-Object -First 1
-          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          Set-Content -Path "$($exe.FullName).sha256" -Value "$hash  $($exe.Name)" -NoNewline
-          Write-Host "$hash  $($exe.Name)"
-
-      - name: Upload assets to release
+      - name: Check the signed installer was attached
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ github.event.release.tag_name }}' (Get-ChildItem dist\WordMD-Setup-*.exe, dist\WordMD-Setup-*.sha256).FullName --clobber
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Warns rather than fails: the release is already published by the time
+          # this runs, so failing here would only add noise to a done deal.
+          $names = @()
+          try { $names = gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name' } catch { }
+          $signed = $names | Where-Object { $_ -like 'WordMD-Setup-*.exe' -and $_ -notlike '*-UNSIGNED*' }
+          if ($signed) {
+            Write-Host "Signed installer attached: $($signed -join ', ')"
+          } else {
+            Write-Warning "No signed installer on this release yet. Build and attach it locally: .\tools\build-signed-release.ps1"
+          }

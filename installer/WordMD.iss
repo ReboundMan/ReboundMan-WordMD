@@ -30,7 +30,15 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
+; An unsigned build gets a different filename on purpose. Signed and unsigned
+; output sharing one name is how an unsigned installer gets uploaded by mistake:
+; a plain ISCC run (build-from-source, CI validation) would overwrite the signed
+; artifact in place, and nothing downstream could tell them apart.
+#ifdef SIGN
 OutputBaseFilename=WordMD-Setup-{#MyAppVersion}
+#else
+OutputBaseFilename=WordMD-Setup-{#MyAppVersion}-UNSIGNED
+#endif
 SetupIconFile=..\src\WordMD\Assets\AppIcon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -40,6 +48,21 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+
+; Code signing (Azure Artifact Signing) is a LOCAL release step: the signed
+; installer is built and uploaded from JJ's machine per spec\DEPLOY.md, because
+; CI holds no signing credential (spec 10024, Open question 4 -> local-only).
+; Guarded by /DSIGN so a plain ISCC run still compiles (CI build validation);
+; without the guard, ISCC aborts whenever the named tool isn't supplied via /S.
+;   Signed:   ISCC /DSIGN /S"artifactsigning=..." installer\WordMD.iss
+;   Unsigned: ISCC installer\WordMD.iss
+; Use tools\build-signed-release.ps1 rather than assembling the /S string by hand.
+#ifdef SIGN
+SignTool=artifactsigning
+; Sign the generated uninstaller too, so Add/Remove Programs and the uninstall
+; path carry the same publisher identity as the installer.
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

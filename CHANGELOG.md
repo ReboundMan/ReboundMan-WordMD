@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Code signing for release builds via Azure Artifact Signing (`CN=ReboundMan.com LLC`, Public Trust). `tools\build-signed-release.ps1` builds, signs, and verifies both the app executable and the installer, then writes the SHA-256 file. Signing runs locally; `spec\DEPLOY.md` carries the checklist. Not yet exercised on a real release: the first signed installer is the acceptance run, so the currently published v1.6.0 remains unsigned.
+
+### Changed
+
+- The release workflow no longer attaches an installer. It validates that the tag matches `VERSION` and that the build chain compiles, because CI holds no signing credential and could only publish an unsigned binary.
+
 ## [1.6.0] - 2026-07-30
 
 ### Added
