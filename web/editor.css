@@ -134,11 +134,28 @@ body { font-family: var(--font-formatted); font-size: var(--font-size); }
   padding: 0.15em 0.35em; border-radius: 3px; font-size: 0.92em;
 }
 .milkdown pre {
+  position: relative;
   background: var(--code-bg); color: var(--code-fg);
   padding: 12px 14px; border-radius: 6px; overflow: auto;
   font-family: var(--font-source); font-size: 0.92em; line-height: 1.5;
 }
 .milkdown pre code { background: transparent; padding: 0; border-radius: 0; font-size: inherit; }
+
+/* Copy-to-clipboard button injected into each fenced code block by
+   milkdown-host.ts. Subtle by default, fully visible on hover/focus so it
+   stays discoverable without competing with the code itself. */
+.mk-copy-btn {
+  position: absolute; top: 6px; right: 6px;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  background: transparent; color: var(--muted);
+  border: none; border-radius: 4px;
+  opacity: 0.55; cursor: pointer;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+}
+.mk-copy-btn:hover, .mk-copy-btn:focus-visible { opacity: 1; background: var(--banner-bg); color: var(--fg); }
+.mk-copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mk-copy-btn.copied { opacity: 1; color: var(--accent); }
 .milkdown blockquote {
   border-left: 3px solid var(--quote-border); padding: 0.2em 1em; color: var(--muted); margin: 0.6em 0;
 }
@@ -187,6 +204,9 @@ body { font-family: var(--font-formatted); font-size: var(--font-size); }
   #app { display: none !important; }
   #find-bar { display: none !important; }
   #print-root { display: block !important; }
+  /* Print clones the live formatted DOM (print.ts), so interactive chrome
+     injected into it must be excluded explicitly. */
+  .mk-copy-btn { display: none !important; }
 
   html, body { height: auto; background: #ffffff; color: #000000; }
 

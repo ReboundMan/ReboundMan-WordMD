@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A copy-to-clipboard button on fenced code blocks in the Formatted pane. Hidden from print output.
+
 ## [2.0.0] - 2026-08-12
 
 The first code-signed release: `WordMD-Setup-2.0.0.exe` and `WordMD.exe` are both Authenticode-signed (`CN=ReboundMan.com LLC`, Azure Artifact Signing, Public Trust), so a clean Windows profile should no longer trip the SmartScreen "Windows protected your PC" warning on first run.
