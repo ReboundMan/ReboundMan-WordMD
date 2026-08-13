@@ -25,7 +25,7 @@
   Cheap confirmation before changing anything: run with a debugger attached, where the setting is already `true`, and both behaviors should work.
 
   Do **not** simply flip it to `true`. It was deliberately gated (see the comment on line 170) because default context menus widen the abuse surface against the privileged bridge, which came out of the v1.5.0 WebView hardening. The fix is a curated menu: set `AreDefaultContextMenusEnabled = true` (required for the event to fire at all) and handle `CoreWebView2.ContextMenuRequested` to remove the entries that motivated the gate (Inspect, View source, Save as) while keeping copy/paste/cut, select all, and the spelling suggestions. Leave `AreDevToolsEnabled` gated on the debugger as it is today. Worth a Hawk pass, since it partially reopens a deliberate hardening decision.
-- [ ] 2026-08-05 — WordMD bug: the edit button in front matter shrinks the window _(vault: processed/2026-08-05-wordmd-frontmatter-edit-shrinks-window.md)_ 🔧 in progress (Hopper, 2026-08-12)
+- [x] 2026-08-05 — WordMD bug: the edit button in front matter shrinks the window _(vault: processed/2026-08-05-wordmd-frontmatter-edit-shrinks-window.md)_ 🔧 fixed by Hopper (PR #2, `.fm-edit`'s min-height raised from 60px to 160px, matching the read view's cap), merged 2026-08-12, shipping in v2.0.0
 - [x] 2026-07-30 — The icon is correct in the taskbar and on the launch button, but wrong when alt-tabbing between applications. Two different Windows icon surfaces, likely the same icon resource not wired to both. _(vault: processed/2026-07-30-wordmd-taskbar-alttab-icon-bug.md)_ 🔧 in progress (Hopper, 2026-08-12) fixed https://github.com/ReboundMan/ReboundMan-WordMD/pull/4, shipped 2026-08-12
 
 ## Done

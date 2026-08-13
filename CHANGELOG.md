@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- A copy-to-clipboard button on fenced code blocks in the Formatted pane. Hidden from print output.
-
 ## [2.0.0] - 2026-08-12
 
 The first code-signed release: `WordMD-Setup-2.0.0.exe` and `WordMD.exe` are both Authenticode-signed (`CN=ReboundMan.com LLC`, Azure Artifact Signing, Public Trust), so a clean Windows profile should no longer trip the SmartScreen "Windows protected your PC" warning on first run.
@@ -19,6 +15,7 @@ The first code-signed release: `WordMD-Setup-2.0.0.exe` and `WordMD.exe` are bot
 - A richer About dialog (Help > About WordMD) with links to the product page and repo, and an optional tip jar. WordMD is free and stays free; the tip is an optional thanks and opens a Stripe-hosted page in your browser. WordMD holds no payment keys and never sees payment details. Setup runbook: `spec\features\support-wordmd-tip-jar.md`.
 - A product page at [reboundman.com/wordmd.html](https://reboundman.com/wordmd.html): why the app exists, what it does, the download, and a feedback form that opens a prefilled GitHub issue.
 - Code signing for release builds via Azure Artifact Signing. `tools\build-signed-release.ps1` builds, signs, and verifies both the app executable and the installer against the expected signer identity (not just chain validity), then writes the SHA-256 file. Signing runs locally, by design: no signing credential exists in CI. `spec\DEPLOY.md` carries the release checklist.
+- A copy-to-clipboard button on fenced code blocks in the Formatted pane. Hidden from print output.
 
 ### Changed
 
@@ -29,6 +26,7 @@ The first code-signed release: `WordMD-Setup-2.0.0.exe` and `WordMD.exe` are bot
 
 - Alt-Tab showed the wrong icon on some launch paths (pinned taskbar, Start Menu, double-click) even though the taskbar and launch-button icons were always correct. The runtime icon was set from a path resolved against the current working directory, which varies by how an unpackaged app is launched; it now anchors to the running executable's own folder.
 - The offscreen print view is now raced against a 5-second timeout, so a pathological document can no longer hang print construction and leak the offscreen instance instead of failing cleanly.
+- Clicking Edit in the front-matter panel no longer visibly shrinks the box. The read-only view capped at 160px tall but the edit box only started at 60px, cutting lines out of view the moment you switched into edit mode.
 
 ## [1.6.0] - 2026-07-30
 
