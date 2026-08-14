@@ -1125,6 +1125,30 @@ public sealed partial class MainWindow : Window
 
     private async void MenuAbout_Click(object sender, RoutedEventArgs e)
     {
+        // This handler is async void (the WinUI Click signature leaves no other
+        // choice), so any exception that escapes it has no caller to propagate to
+        // and crashes the whole process instead of just failing to open a dialog.
+        // That is exactly what happened here: SecondaryTextBrush()'s theme-
+        // dictionary lookup threw at runtime despite compiling and being checked
+        // against Microsoft's own docs beforehand -- neither compiling nor
+        // matching documented shape guarantees the actual WinUI runtime resource
+        // structure matches what was assumed, and this code path was never able
+        // to be exercised in a running app before shipping. The try/catch below
+        // is a permanent backstop: opening About must never be able to take down
+        // the whole app again, regardless of what future change might break here.
+        try
+        {
+            await ShowAboutDialogAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"MenuAbout_Click failed: {ex}");
+            try { await ShowErrorAsync("About WordMD", $"WordMD v{AppVersion}"); } catch { }
+        }
+    }
+
+    private async Task ShowAboutDialogAsync()
+    {
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(new TextBlock
         {
@@ -1220,15 +1244,42 @@ public sealed partial class MainWindow : Window
     /// De-emphasised text brush that actually resolves per-theme, unlike a flat Opacity
     /// multiply (the same percentage against a light vs. dark base color yields different
     /// contrast ratios, so a hardcoded Opacity is never theme-safe). Application.Current
-    /// .Resources[key] would silently return the Light value even in Dark theme (it is
-    /// not a live {ThemeResource} binding), so this reads the correct theme's dictionary
-    /// explicitly, using the same ActualTheme source of truth ApplyShellTheme already uses.
+    /// .Resources[key] alone would silently return the Light value even in Dark theme
+    /// (it is not a live {ThemeResource} binding), so this tries the theme dictionary
+    /// first. Every step is defensive: an earlier version indexed ThemeDictionaries
+    /// directly with no guard, and that threw at runtime (crashing the app, since this
+    /// is reached from an async void handler) despite compiling cleanly and matching
+    /// Microsoft's documented shape -- neither guarantees the actual resource structure
+    /// on a given WinUI/WindowsAppSDK version matches what the docs describe. Nothing
+    /// here may throw; each tier falls back to the next, ending in a literal color that
+    /// cannot fail to construct.
     /// </summary>
     private Microsoft.UI.Xaml.Media.Brush SecondaryTextBrush()
     {
-        var themeKey = RootGrid.ActualTheme == ElementTheme.Dark ? "Dark" : "Light";
-        var themeDict = (ResourceDictionary)Application.Current.Resources.ThemeDictionaries[themeKey];
-        return (Microsoft.UI.Xaml.Media.Brush)themeDict["TextFillColorSecondaryBrush"];
+        try
+        {
+            var themeKey = RootGrid.ActualTheme == ElementTheme.Dark ? "Dark" : "Light";
+            if (Application.Current.Resources.ThemeDictionaries.TryGetValue(themeKey, out var themeDictObj)
+                && themeDictObj is ResourceDictionary themeDict
+                && themeDict.TryGetValue("TextFillColorSecondaryBrush", out var brushObj)
+                && brushObj is Microsoft.UI.Xaml.Media.Brush themedBrush)
+            {
+                return themedBrush;
+            }
+        }
+        catch { }
+
+        try
+        {
+            if (Application.Current.Resources.TryGetValue("TextFillColorSecondaryBrush", out var fallbackObj)
+                && fallbackObj is Microsoft.UI.Xaml.Media.Brush fallbackBrush)
+            {
+                return fallbackBrush;
+            }
+        }
+        catch { }
+
+        return new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 128, 128, 128));
     }
 
     private async void MenuTelemetryToggle_Click(object sender, RoutedEventArgs e)
