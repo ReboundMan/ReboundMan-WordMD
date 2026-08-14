@@ -1,7 +1,8 @@
 ---
 spec: 10065
 feature: print-from-canonical-markdown-out-of-band
-status: ready
+status: built
+built: 2026-08-14 (https://github.com/ReboundMan/ReboundMan-WordMD/pull/3)
 pr: https://github.com/ReboundMan/ReboundMan-WordMD/pull/3
 agent: emily
 drafted: 2026-08-05
