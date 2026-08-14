@@ -137,6 +137,25 @@ public sealed partial class MainWindow : Window
         return string.Equals(uri.AbsolutePath, "/editor.html", StringComparison.OrdinalIgnoreCase);
     }
 
+    // Only hand off http/https links to the shell. Never ShellExecute arbitrary
+    // schemes (file:, custom protocol handlers, etc.) that a blocked navigation
+    // or new-window request could try to abuse.
+    private static void OpenExternalIfHttp(string? uriText)
+    {
+        if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return;
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(uriText!) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
     private async Task InitializeWebViewAsync()
     {
         await EditorView.EnsureCoreWebView2Async();
@@ -151,28 +170,36 @@ public sealed partial class MainWindow : Window
         {
             if (IsTrustedEditorUri(e.Uri)) return;
             e.Cancel = true;
-            // Only hand off http/https links to the shell. Never ShellExecute
-            // arbitrary schemes (file:, custom protocol handlers, etc.) that a
-            // forced in-page navigation could try to abuse.
-            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var navUri)
-                && (string.Equals(navUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(navUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)))
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start(
-                        new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true });
-                }
-                catch { }
-            }
+            OpenExternalIfHttp(e.Uri);
+        };
+
+        // Without this, a link's target="_blank"/window.open(), or the context
+        // menu's own "open in new window/tab" (newly reachable now that the
+        // context menu is back below), spawns an unrestricted CoreWebView2
+        // popup with none of this handler's lockdown. Route it through the
+        // same trusted-external-only path instead of letting one exist.
+        EditorView.CoreWebView2.NewWindowRequested += (_, e) =>
+        {
+            e.Handled = true;
+            OpenExternalIfHttp(e.Uri);
         };
 
         EditorView.CoreWebView2.WebMessageReceived += OnWebMessage;
-        // DevTools / context menus only when a debugger is attached; in shipped
-        // builds they would widen the abuse surface against the privileged bridge.
+        // DevTools only when a debugger is attached: its console runs script AS the
+        // trusted origin, which OnWebMessage's origin check has no way to tell apart
+        // from legitimate app code, so it could drive the privileged WebMessage
+        // bridge directly. WebView2 hides "Inspect" from the default context menu
+        // automatically when DevTools is off, so the context menu itself (copy,
+        // paste, spelling suggestions) doesn't carry that risk and stays on in shipped
+        // builds — bug 2026-08-10/2026-08-11: it had been gated on the same debug flag,
+        // which took copy/paste and spell-check suggestions with it for no security gain.
+        // (View source / Save as, also in the default menu, only expose this app's own
+        // already-locally-readable bundled files — not a real escalation here — and a
+        // curated ContextMenuRequested filter was skipped rather than guessed, since
+        // WebView2 does not document the internal .Name values those items would need.)
         var debug = System.Diagnostics.Debugger.IsAttached;
         EditorView.CoreWebView2.Settings.AreDevToolsEnabled = debug;
-        EditorView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = debug;
+        EditorView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
         EditorView.CoreWebView2.Settings.IsStatusBarEnabled = false;
         EditorView.Source = new Uri("https://appassets.local/editor.html");
     }
