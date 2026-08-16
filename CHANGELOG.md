@@ -6,9 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-08-12
+
 ### Fixed
 
-- Help > About WordMD crashed the app. Present in the published v2.0.0 installer; a v2.0.1 patch is recommended.
+- Help > About WordMD crashed the app. Present in the published v2.0.0 installer. Root cause and the process changes meant to prevent a repeat: `AGENTS.md`, "C#/WinUI review gap."
 
 ## [2.0.0] - 2026-08-12
 
