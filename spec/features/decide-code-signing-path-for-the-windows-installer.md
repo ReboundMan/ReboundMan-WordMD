@@ -1,7 +1,8 @@
 ---
 spec: 10024
 feature: decide-code-signing-path-for-the-windows-installer
-status: draft
+status: live
+live: 2026-08-16 (Q4 resolved by practice: local signing, shipped in DEPLOY.md; CI signing becomes a punchlist item if ever wanted)
 revised: 2026-08-05 (JJ review round 1); 2026-08-05 (Emily: JJ confirmed Azure Trusted Signing — now branded Artifact Signing — with an existing account, and asked for a full beginner-level walkthrough; Behavior rewritten as concrete numbered steps, researched against current Microsoft Learn documentation); 2026-08-05 (Emily: Spec Review Fleet fixes applied — Sage caught a broken Inno Setup escape sequence and a sign-before-package ordering bug that would both have failed silently on JJ's first real attempt; Hawk caught an overprivileged `az login` credential scope); 2026-08-11 (JJ walked Part A live: steps 1-5 confirmed and recorded, Open questions 1 and 2 closed, question 3 partially closed; step 5's portal navigation corrected — profile-level IAM does not exist in the portal, profile scope is CLI-only — and account-scope Signer accepted deliberately with a caveat for the planned second certificate profile; step 8 metadata.json filled in with confirmed values)
 part_a: complete (2026-08-11)
 part_b: complete (2026-08-11) — client tools 0.1.128, paths recorded in step 6, Azure CLI installed (the omitted prerequisite) and authenticated via `az login` + interactive tenant selection, metadata.json at C:\Code\Signing\.wordmd-signing\ (endpoint wus2)
