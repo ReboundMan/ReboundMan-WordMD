@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-02
+
 ### Fixed
 
 - Saving from the Formatted pane no longer restyles content you never touched. The markdown serializer made stylistic choices (bullet character, list tightness, escaping) that did not necessarily match how a file was originally written; editing one paragraph could silently flip every `-` bullet in the file to `*`, or turn a tight list loose. Every top-level block the user did not actually edit now keeps its exact original bytes. Also fixes a real upstream bug (`@milkdown/preset-commonmark`) where tight lists always serialized as loose, and (found in fleet review before this shipped, so never released) a version of this same fix that would have deleted GFM task-list checkboxes and quietly diffed against an already-restyled copy of the file instead of the real original. Design, root causes, and full fleet-review history: `spec/features/preserve-untouched-blocks-on-formatted-save.md`.
