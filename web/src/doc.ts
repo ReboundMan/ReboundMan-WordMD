@@ -6,6 +6,7 @@
 import { CodeMirrorHost } from "./codemirror-host";
 import { MilkdownHost } from "./milkdown-host";
 import { extractFrontMatter, joinFrontMatter, summarizeFrontMatter } from "./frontmatter";
+import { computeLineToBlock } from "./block-boundaries";
 import { editorViewCtx } from "@milkdown/core";
 
 export type Pane = "source" | "formatted";
@@ -54,6 +55,31 @@ export class Doc {
   // gates flush()/syncInactiveFromCanonical() so front-matter-only edits never
   // re-serialize an untouched body through Milkdown.
   private paneEdited: boolean = false;
+  // Unlike paneEdited (session-wide, never reset), this is true only while the
+  // Formatted pane has genuinely new content that flush() has not yet reconciled
+  // into this.body. Without it, flush()'s formatted branch (block-reconcile.ts's
+  // parse-every-chunk + O(n*m) LCS + whole-doc serialize+parse round trip) would
+  // re-run on every pane-focus switch in split mode, not just on real edits:
+  // maybeSyncOnFocus() calls flush() whenever focus moves between panes, and
+  // lastEditedPane flips on every such switch regardless of whether anything was
+  // typed, so a naive `lastEditedPane === "formatted"` check alone reruns the
+  // full reconcile pipeline on every other click with nothing new to reconcile.
+  // Set true only by a genuine formatted-pane edit; cleared once flush() has
+  // actually reconciled that edit into this.body.
+  private formattedDirtySinceFlush: boolean = false;
+  // The text block-reconcile.ts diffs the Formatted pane's fresh serialization
+  // against. Deliberately NOT the same as this.body: onPaneEdit assigns the raw,
+  // un-reconciled serializer output to this.body on every keystroke (for live
+  // consumers like stats and cross-pane preview), and that raw output is exactly
+  // the thing this whole feature exists to avoid treating as ground truth. If
+  // flush() diffed against this.body directly, any construct whose round-trip
+  // isn't already known to be lossless (unlike bullets/list-spread, which are
+  // fixed at the source in milkdown-host.ts) would silently have its "original"
+  // baseline replaced by an already-once-restyled copy the moment any edit fired
+  // anywhere in the document — safe (the two-layer check in block-reconcile.ts
+  // still prevents wrong output), but quietly weaker than the preservation this
+  // feature promises. Set only at load and at the end of a successful reconcile.
+  private reconcileBaseline: string = "";
   // Front-matter edit-mode state: snapshot for Escape-cancel, and a validity
   // flag (a bare "---" line inside the YAML would close the fence early on the
   // next load, so such input is held, not committed).
@@ -176,6 +202,7 @@ export class Doc {
     const split = extractFrontMatter(normalized);
     this.frontMatter = split.frontMatter;
     this.body = split.body;
+    this.reconcileBaseline = split.body;
     this.refreshFrontMatterBanner();
 
     // Splitter drag (operates only when in split mode).
@@ -235,14 +262,29 @@ export class Doc {
   flush(): void {
     if (!this.paneEdited) return;    // no pane edits: body is already canonical
     if (this.lastEditedPane === "formatted") {
-      const md = this.mk.getMarkdown();
-      if (md) {
+      if (!this.formattedDirtySinceFlush) return; // already reconciled; nothing new to do
+      // Reconcile against reconcileBaseline -- NOT this.body. onPaneEdit assigns
+      // the raw, un-reconciled serializer output to this.body on every keystroke
+      // (for live consumers like stats), so this.body is exactly the kind of
+      // already-restyled text this feature exists to avoid treating as "the
+      // original". See block-reconcile.ts; falls back to plain full-document
+      // serialization whenever reconciliation can't be trusted.
+      const md = this.mk.getMarkdownReconciled(this.reconcileBaseline);
+      if (md !== null) {
         this.body = md;
+        this.reconcileBaseline = md;
+        this.formattedDirtySinceFlush = false;
         this.lineToBlockCache = null;
         this.blockRangesCache = null;
       }
     } else {
       this.body = this.cm.getText();
+      // The source pane is always byte-exact already (no serializer round trip),
+      // so it becomes the new reconciliation baseline directly: the next
+      // formatted-pane edit should diff against what the user just wrote in
+      // source, not against whatever the formatted pane held before that.
+      this.reconcileBaseline = this.body;
+      this.formattedDirtySinceFlush = false;
       this.lineToBlockCache = null;
       this.blockRangesCache = null;
     }
@@ -271,6 +313,7 @@ export class Doc {
     if (this.syncing) return;
     this.lastEditedPane = pane;
     this.paneEdited = true;
+    if (pane === "formatted") this.formattedDirtySinceFlush = true;
     this.body = newText;
     this.lineToBlockCache = null;
     this.blockRangesCache = null;
@@ -589,23 +632,7 @@ export class Doc {
    */
   private getLineToBlock(): number[] {
     if (this.lineToBlockCache) return this.lineToBlockCache;
-    const text = this.body;
-    const lines = text.split("\n");
-    const out: number[] = new Array(lines.length).fill(0);
-    let block = -1;
-    let needBump = true;
-    let inFence = false;
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
-      if (/^\s{0,3}(```|~~~)/.test(l)) inFence = !inFence;
-      if (l.trim().length === 0 && !inFence) {
-        out[i] = Math.max(0, block);
-        needBump = true;
-        continue;
-      }
-      if (needBump) { block++; needBump = false; }
-      out[i] = block;
-    }
+    const out = computeLineToBlock(this.body.split("\n"));
     this.lineToBlockCache = out;
     return out;
   }

@@ -1,12 +1,65 @@
 // Milkdown host: one Editor per Doc, mounted in the formatted pane.
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, parserCtx, serializerCtx } from "@milkdown/core";
-import { commonmark, codeBlockSchema } from "@milkdown/preset-commonmark";
-import { gfm } from "@milkdown/preset-gfm";
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, parserCtx, serializerCtx, remarkStringifyOptionsCtx } from "@milkdown/core";
+import { commonmark, codeBlockSchema, bulletListSchema } from "@milkdown/preset-commonmark";
+import { gfm, extendListItemSchemaForTask } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
 import { $view } from "@milkdown/utils";
 import { Slice } from "@milkdown/prose/model";
 import type { NodeViewConstructor } from "@milkdown/prose/view";
+import { reconcileFormattedSave } from "./block-reconcile";
+
+/**
+ * Fixes a real upstream bug in @milkdown/preset-commonmark 7.5.8: bullet_list and
+ * list_item's parseMarkdown runners stringify the mdast `spread` boolean via a
+ * template literal (`${node.spread}`) before storing it as a ProseMirror attr, so
+ * a tight (non-spread) list's attrs.spread ends up as the STRING "false" rather
+ * than the boolean false. Their own toMarkdown runners then pass that string
+ * straight through as the output spread value. Since ANY non-empty string
+ * (including "false") is truthy in JS, and something downstream treats spread
+ * as a plain truthy check, EVERY list serializes as loose/spread regardless of
+ * how it was actually written — confirmed empirically: a manually-constructed
+ * node with a real boolean spread:false serializes tight, correctly.
+ *
+ * ordered_list's own toMarkdown runner already does `node.attrs.spread === "true"`
+ * (converts correctly) - only bullet_list and list_item need this fix.
+ *
+ * This affects every list every time the Formatted pane saves, not just genuinely
+ * edited ones: block-reconcile.ts's untouched-block preservation depends on a
+ * lossless serialize->parse round-trip to compare "did this actually change", and
+ * this bug makes that round-trip lossy for lists specifically.
+ *
+ * IMPORTANT: this delegates to the PREVIOUS handler's own toMarkdown.runner (via
+ * `spec`, i.e. `prev(ctx)`), only pre-correcting the node's `spread` attr first,
+ * rather than reimplementing the runner from scratch. That is not a style choice:
+ * `list_item`'s schema id is patched a second time by @milkdown/preset-gfm (task
+ * lists — checkbox rendering, the `checked` attr, checked-aware markdown I/O), and
+ * `$NodeSchema.extendSchema` replaces the entire node registration for that id —
+ * last `.use()` wins, whole-schema, not per-field. An earlier version of this fix
+ * patched the base `listItemSchema` directly and reimplemented the runner; because
+ * this file's `.use()` chain runs after `.use(gfm)`, that reimplementation silently
+ * became the FINAL "list_item" registration, deleting GFM's task-list schema
+ * outright — checkboxes stopped rendering and `- [x] done` saved back as `- done`.
+ * Delegating means this patch rides on top of whichever `list_item` handler it is
+ * given (GFM's task-aware one, here) instead of replacing it.
+ */
+function fixSpreadSerialization<T extends string>(schema: import("@milkdown/utils").$NodeSchema<T>) {
+  return schema.extendSchema((prev) => (ctx) => {
+    const spec = prev(ctx);
+    return {
+      ...spec,
+      toMarkdown: {
+        match: spec.toMarkdown.match,
+        runner: (state: any, node: import("@milkdown/prose/model").Node) => {
+          const spread = node.attrs.spread === "true" || node.attrs.spread === true;
+          const fixed =
+            spread === node.attrs.spread ? node : node.type.create({ ...node.attrs, spread }, node.content, node.marks);
+          spec.toMarkdown.runner(state, fixed);
+        },
+      },
+    };
+  });
+}
 
 export interface MilkdownHostOptions {
   parent: HTMLElement;
@@ -73,6 +126,19 @@ const codeBlockCopyView: () => NodeViewConstructor = () => () => {
 export class MilkdownHost {
   private editor!: Editor;
   private suppressEcho = false;
+  // The last markdown text pushed programmatically via setMarkdown(), so the
+  // listener callback below can recognize its own echo even after suppressEcho
+  // has already been cleared. @milkdown/plugin-listener debounces
+  // markdownUpdated by 200ms; suppressEcho is cleared on a microtask right after
+  // dispatch, which settles long before that 200ms window closes. So by the time
+  // the debounced callback for OUR OWN setMarkdown() actually fires, suppressEcho
+  // is already false and the callback would wrongly treat a programmatic sync as
+  // a real user edit -- flipping lastEditedPane, marking the doc dirty, and (once
+  // block-reconcile.ts existed) polluting the pane that's supposed to hold the
+  // canonical original text. Comparing the emitted markdown against this latch
+  // catches the echo regardless of the debounce's exact timing, and is cleared
+  // after one comparison so a genuine subsequent edit is never swallowed.
+  private lastPushedMarkdown: string | null = null;
   private ready: Promise<void>;
 
   constructor(private opts: MilkdownHostOptions) {
@@ -84,9 +150,19 @@ export class MilkdownHost {
       .config((ctx) => {
         ctx.set(rootCtx, this.opts.parent);
         ctx.set(defaultValueCtx, this.opts.initialMarkdown);
+        // Dash bullets, not the mdast-util-to-markdown default asterisk. Purely a
+        // style choice for GENUINELY edited lists (block-reconcile.ts preserves
+        // untouched ones verbatim regardless of this setting) but matches common
+        // markdown convention and avoids gratuitously flipping style on save.
+        ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: "-" as const }));
         ctx.get(listenerCtx).markdownUpdated((_c, md, prev) => {
           if (this.suppressEcho) return;
           if (md === prev) return;
+          if (this.lastPushedMarkdown !== null) {
+            const isEcho = md === this.lastPushedMarkdown;
+            this.lastPushedMarkdown = null;
+            if (isEcho) return;
+          }
           this.opts.onUserChange(md);
         });
       })
@@ -95,6 +171,8 @@ export class MilkdownHost {
       .use(history)
       .use(listener)
       .use($view(codeBlockSchema.node, codeBlockCopyView))
+      .use(fixSpreadSerialization(bulletListSchema))
+      .use(fixSpreadSerialization(extendListItemSchemaForTask))
       .create();
   }
 
@@ -106,6 +184,7 @@ export class MilkdownHost {
   async setMarkdown(md: string): Promise<void> {
     await this.ready;
     if (md === this.getMarkdown()) return;
+    this.lastPushedMarkdown = md;
     this.suppressEcho = true;
     try {
       this.editor.action((ctx) => {
@@ -119,7 +198,10 @@ export class MilkdownHost {
       });
     } finally {
       // Flip suppressEcho asynchronously so the listener fires once for our setMarkdown
-      // and is ignored, but a subsequent user keystroke is treated as user.
+      // and is ignored, but a subsequent user keystroke is treated as user. The
+      // lastPushedMarkdown latch (above) is the real guard against the debounced
+      // echo; this flag only short-circuits the common case where the listener
+      // happens to fire before the debounce delay would otherwise matter.
       Promise.resolve().then(() => { this.suppressEcho = false; });
     }
   }
@@ -137,6 +219,41 @@ export class MilkdownHost {
       console.error("getMarkdown failed", err);
     }
     return out;
+  }
+
+  /**
+   * Like getMarkdown(), but preserves the exact original bytes of every top-level
+   * block the user did not actually edit, instead of letting the full-document
+   * serializer restyle content it never touched (bullet character, list
+   * tightness, escaping). See block-reconcile.ts for the two-layer safety design.
+   * `originalBody` is whatever this content looked like before this editing
+   * session (the loaded/last-synced text) — the baseline reconciliation compares
+   * against. Falls back to plain getMarkdown() whenever reconciliation cannot be
+   * trusted for this document, which is always at least as good as today's
+   * behavior, never worse.
+   *
+   * Returns `null` only when no value could be produced at all (editor not
+   * mounted). Callers must not fold that together with a legitimate empty-string
+   * result (the user deleted everything and the document really does serialize
+   * to "") — a `if (result)` truthy check on the caller's side would silently
+   * discard that deletion by treating "" the same as "nothing happened".
+   */
+  getMarkdownReconciled(originalBody: string): string | null {
+    if (!this.editor) return null;
+    try {
+      let out = "";
+      this.editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const parser = ctx.get(parserCtx);
+        const serializer = ctx.get(serializerCtx);
+        const reconciled = reconcileFormattedSave(originalBody, view.state.doc, view.state.schema, parser, serializer);
+        out = reconciled ?? serializer(view.state.doc);
+      });
+      return out;
+    } catch (err) {
+      console.error("getMarkdownReconciled failed", err);
+      return this.getMarkdown();
+    }
   }
 
   /**
