@@ -167,6 +167,49 @@ body { font-family: var(--font-formatted); font-size: var(--font-size); }
 .milkdown ul, .milkdown ol { padding-left: 1.6em; }
 .milkdown input[type="checkbox"] { margin-right: 0.4em; }
 
+/* GFM task-list items (`- [ ]` / `- [x]`). @milkdown/preset-gfm's own schema
+   only tags data-item-type="task" / data-checked on the <li> -- it renders no
+   checkbox glyph at all, so without this a task item is indistinguishable
+   from a plain bullet. Drawn as a pseudo-element, not a real DOM node, so
+   ProseMirror's own reconciliation of the <li> is completely untouched; the
+   click-to-toggle half of this lives in milkdown-host.ts, which hit-tests
+   against this same box (computed from padding-left, so it can't drift out
+   of sync with these rules). */
+.milkdown li[data-item-type="task"] {
+  list-style: none;
+  position: relative;
+  padding-left: 1.5em;
+}
+.milkdown li[data-item-type="task"]::before {
+  content: "";
+  position: absolute;
+  left: 0.05em;
+  top: 0.32em;
+  width: 0.95em;
+  height: 0.95em;
+  box-sizing: border-box;
+  border: 1.5px solid var(--muted);
+  border-radius: 3px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.milkdown li[data-item-type="task"][data-checked="true"]::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.milkdown li[data-item-type="task"][data-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0.32em;
+  top: 0.52em;
+  width: 0.3em;
+  height: 0.52em;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(40deg);
+  pointer-events: none;
+}
+
 /* --- Find bar --- */
 #find-bar {
   position: absolute; top: 8px; right: 16px; z-index: 100;

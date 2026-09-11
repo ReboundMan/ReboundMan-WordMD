@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Task-list checkboxes (`- [ ]` / `- [x]`) now render as an actual checkbox in the Formatted pane, and clicking one toggles it. Previously they showed as plain bullets with no visual marker at all.
+
 ## [2.0.2] - 2026-09-02
 
 ### Fixed

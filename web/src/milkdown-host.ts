@@ -4,8 +4,9 @@ import { commonmark, codeBlockSchema, bulletListSchema } from "@milkdown/preset-
 import { gfm, extendListItemSchemaForTask } from "@milkdown/preset-gfm";
 import { history } from "@milkdown/plugin-history";
 import { listener, listenerCtx } from "@milkdown/plugin-listener";
-import { $view } from "@milkdown/utils";
+import { $view, $prose } from "@milkdown/utils";
 import { Slice } from "@milkdown/prose/model";
+import { Plugin } from "@milkdown/prose/state";
 import type { NodeViewConstructor } from "@milkdown/prose/view";
 import { reconcileFormattedSave } from "./block-reconcile";
 
@@ -123,6 +124,46 @@ const codeBlockCopyView: () => NodeViewConstructor = () => () => {
   return { dom: pre, contentDOM: code, stopEvent: (event) => btn.contains(event.target as Node) };
 };
 
+/**
+ * Click-to-toggle for GFM task-list checkboxes. editor.css draws the visible
+ * box (and its checkmark) as a ::before/::after pseudo-element on the task
+ * list_item's own <li> -- deliberately not a real DOM node, so ProseMirror's
+ * reconciliation of that element is untouched, unlike codeBlockCopyView's
+ * NodeView above (which needs a real button element and so needs the
+ * dom/contentDOM split to keep it out of ProseMirror's managed content).
+ * A pseudo-element can't carry its own click handler, so this is the other
+ * half: hit-test each click's position against the same box, computed from
+ * the <li>'s own `padding-left` (so it can't drift out of sync with the CSS
+ * rule that draws it) rather than a hardcoded pixel value.
+ */
+const taskCheckboxPlugin = $prose(
+  () =>
+    new Plugin({
+      props: {
+        handleClickOn(view, _pos, node, nodePos, event) {
+          if (node.type.name !== "list_item" || node.attrs.checked == null) return false;
+          const dom = view.nodeDOM(nodePos);
+          if (!(dom instanceof HTMLElement)) return false;
+          const rect = dom.getBoundingClientRect();
+          const gutter = parseFloat(getComputedStyle(dom).paddingLeft) || 0;
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          if (x < 0 || x > gutter || y < 0 || y > rect.height) return false;
+          // Restrict to roughly the first line, so a multi-paragraph item's
+          // later lines don't also toggle it from a gutter click.
+          const lineHeight = parseFloat(getComputedStyle(dom).lineHeight) || rect.height;
+          if (y > lineHeight * 1.4) return false;
+          const tr = view.state.tr.setNodeMarkup(nodePos, undefined, {
+            ...node.attrs,
+            checked: node.attrs.checked !== true,
+          });
+          view.dispatch(tr);
+          return true;
+        },
+      },
+    })
+);
+
 export class MilkdownHost {
   private editor!: Editor;
   private suppressEcho = false;
@@ -171,6 +212,7 @@ export class MilkdownHost {
       .use(history)
       .use(listener)
       .use($view(codeBlockSchema.node, codeBlockCopyView))
+      .use(taskCheckboxPlugin)
       .use(fixSpreadSerialization(bulletListSchema))
       .use(fixSpreadSerialization(extendListItemSchemaForTask))
       .create();
