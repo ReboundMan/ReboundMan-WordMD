@@ -11,7 +11,7 @@
 
 ## Ideas / Backlog
 
-- [ ] 2026-09-13 — WordMD feature: research and release in the Windows Store _(vault: processed/2026-09-13-wordmd-windows-store-release.md)_
+- [ ] 2026-09-13 — (M?)(L?) WordMD feature: research and release in the Windows Store _(vault: processed/2026-09-13-wordmd-windows-store-release.md)_ Spec drafted 2026-09-14 (features/10187-wordmd-feature-research-and-release-in-the-windows-store.md, status: draft, awaiting review; thin stub, decisions listed)
 - [x] 2026-08-03 — (S?)(L?) **Parked 2026-08-12 (JJ):** "I don't think we want to piss off people until we get a real product SKU." The Stripe integration that shipped 2026-08-12 is a free-forever tip jar, not a paid removal, so there is nothing yet for a nag screen to gate. Revisit only if/when `wordmd_pro_lifetime` (the $29.99 license in `PAYMENTS-JJ.md`, targeted October) actually ships — that is a real SKU a nag could point at. Original ask: add a nag screen (or some other deliberate irritation) so that once Stripe integration lands there is something concrete paying removes. _(vault: processed/2026-08-03-wordmd-nag-screen-stripe-removal.md)_
 
 - [x] (M)(M) Print: render formatted output from canonical Markdown out-of-band instead of cloning the live ProseMirror DOM, before any viewport-virtualizing or lazy Milkdown plugin lands (otherwise print could silently truncate long docs). Spec drafted 2026-08-05 (features/10065-print-from-canonical-markdown-out-of-band.md, status: draft, awaiting review). shipped 2026-08-14 (PR #3)
