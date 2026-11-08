@@ -94,12 +94,15 @@ Picks the alignment algorithm used while Sync Scrolling is on. **Both algorithms
 **Help → Check for Updates…** looks for a newer release of WordMD on GitHub. It only runs when you click it; WordMD never checks in the background.
 
 - If you are up to date, it says so. If a newer version exists, you see what changed and can choose **Download and install**.
-- WordMD downloads the installer from the official GitHub releases page and checks it before running anything: the file size, a checksum published with the release, the digital signature, which must be from ReboundMan.com LLC, and that the installer is the version the release announced. If any check fails, the file is deleted and not run.
-- To install, WordMD asks you to save any unsaved changes, closes, and opens the normal installer window. Leave **Launch WordMD** checked on the last page to reopen the app. If you cancel the installer, WordMD stays closed; just start it again.
+- WordMD downloads the installer from the official GitHub releases page and checks it before running anything: the file size, a checksum published with the release, the digital signature, which must be from ReboundMan.com LLC (and is checked for revocation whenever Windows can reach the certificate servers), and that the installer is the version the release announced. If any check fails, the file is deleted and not run.
+- To install, WordMD asks you to save any unsaved changes and then closes. **If WordMD was installed just for you** (the default), it updates itself with a small progress window and reopens on its own, with a new empty tab (the files you had open are not reopened). **If it was installed for all users** (or this computer also has an all-users install), it opens the normal installer window instead, because Windows may have to ask for permission; leave **Launch WordMD** checked on the last page to reopen the app.
+- If an update doesn't finish (you cancelled the installer, declined the permission prompt, or Setup was stopped), WordMD stays closed, because it has already exited by then. Start it again and it tells you the update didn't finish, and says where Setup's log is if there is one. Nothing is lost: your documents were saved or discarded before it closed.
 - Only the installed copy of WordMD can update itself. A portable or development copy offers the releases page instead.
 - **View release notes** opens the release on GitHub instead, if you would rather download it yourself.
 
-WordMD only talks to GitHub: the check itself, and, only if you choose Download and install, the download. GitHub sees your IP address and the WordMD version in the request, the same as visiting the page in a browser. No document content, file paths, or usage data are sent. Separately, Windows itself may contact Microsoft to validate the installer's signature certificate, as it does for any signed program.
+WordMD only talks to GitHub: the check itself, and, only if you choose Download and install, the download. GitHub sees your IP address and the WordMD version in the request, the same as visiting the page in a browser. No document content, file paths, or usage data are sent. Separately, Windows itself contacts Microsoft's certificate servers while validating the installer's signature, including to check that the certificate hasn't been revoked, as it does for any signed program; if those can't be reached, the update still goes ahead using the signature checks that don't need them.
+
+**On managed computers**, an administrator can switch this feature off by setting the DWORD value `DisableUpdateCheck` to `1` under `HKEY_LOCAL_MACHINE\Software\Policies\WordMD`. The Check for Updates menu item is then hidden.
 
 ---
 

@@ -8,7 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Help > Check for Updates... finds the latest WordMD release on GitHub and, if it is newer, downloads and installs it. It only runs when you click it (nothing checks in the background). Before anything runs, the download is verified against its published size and SHA-256 checksum, its digital signature (which must come from ReboundMan.com LLC), and the version the installer itself declares, so an older installer cannot be passed off as a newer release; a download that fails any check is deleted and never run. WordMD asks you to save unsaved work, closes, and opens the normal installer. Only the installed copy can update itself; a portable or development copy is pointed at the releases page. This is the first time WordMD makes a network request of its own; it only talks to GitHub. Design, threat model, and verification: `spec/features/check-for-updates.md`.
+- Help > Check for Updates... finds the latest WordMD release on GitHub and, if it is newer, downloads and installs it. It only runs when you click it (nothing checks in the background). Before anything runs, the download is verified against its published size and SHA-256 checksum, its digital signature (which must come from ReboundMan.com LLC, and is checked for revocation whenever Windows can reach the certificate servers), and the version the installer itself declares, so an older installer cannot be passed off as a newer release; a download that fails any check is deleted and never run. WordMD asks you to save unsaved work and closes. A per-user install (the default) then updates itself with a small progress window and reopens on its own (with a new empty tab); an all-users install opens the normal installer so Windows can ask for permission. If an update doesn't finish, the next launch says so. Only the installed copy can update itself; a portable or development copy is pointed at the releases page. This is the first time WordMD makes a network request of its own; it only talks to GitHub. Design, threat model, and verification: `spec/features/check-for-updates.md`.
+- The installer accepts `/RELAUNCH=1`, which reopens WordMD after a silent install. Without it a silent install behaves exactly as before and does not start the app. The normal installer window is unchanged.
+- Administrators can hide Check for Updates on managed computers with the DWORD `DisableUpdateCheck` = 1 under `HKLM\Software\Policies\WordMD`.
+- A GitHub Actions workflow, `Release contract`, runs after every published release (and on demand for any tag) and fails if the release is not shaped the way the in-app updater needs: tag format, marked Latest, asset names, checksum file format and value, signature and signer, and the installer's own version. Rules: `spec/DEPLOY.md`, "In-app updater contract".
+
+### Fixed
+
+- Saving at the "unsaved changes" prompt when another program wrote to the same file at the same instant no longer counts as saved. Previously File > Exit (and closing a tab) went ahead while the "file changed during save" prompt was still open; now the close is cancelled so you can resolve the conflict first. The same fix covers another file being opened (for example from Explorer) while the "unsaved changes" prompt is up: the tab you were asked about is the one that gets saved.
+- The startup path that opens a file passed on the command line can no longer end the app if its error dialog fails to open.
+
+### Changed
+
+- The project file no longer turns assembly trimming on for non-Debug builds. Every release build already passed `-p:PublishTrimmed=false`; the old default only mattered for a Visual Studio publish, which would have trimmed WinUI and broken the app.
 
 ## [2.1.0] - 2026-09-11
 

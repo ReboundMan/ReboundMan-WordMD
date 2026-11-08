@@ -13,7 +13,7 @@ Writers, PMs, students, and engineers who want Markdown files to feel closer to 
 - **Stack:** .NET 8, C#, WinUI 3, WebView2, Milkdown, CodeMirror, esbuild, Markdig, Inno Setup.
 - **Auth/DB:** None. `auth_family` is `none-local`.
 - **Hosting:** None. Releases ship as Windows installer files on GitHub.
-- **Local stores:** `%APPDATA%\WordMD\settings.json`, `%LOCALAPPDATA%\WordMD\recovery\`, `%LOCALAPPDATA%\WordMD\telemetry\`, and `%LOCALAPPDATA%\WordMD\feedback\`.
+- **Local stores:** `%APPDATA%\WordMD\settings.json`, `%LOCALAPPDATA%\WordMD\recovery\`, `%LOCALAPPDATA%\WordMD\telemetry\`, `%LOCALAPPDATA%\WordMD\feedback\`, and `%LOCALAPPDATA%\WordMD\updates\` (in-app update downloads, Setup's `last-update.log`, and the `update-attempt.txt` marker).
 
 ## Conventions specific to this repo
 

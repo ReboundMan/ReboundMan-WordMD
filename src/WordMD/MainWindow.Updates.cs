@@ -47,6 +47,10 @@ public sealed partial class MainWindow
 
     private async Task RunUpdateFlowAsync()
     {
+        // The menu item is hidden when an administrator has switched the feature off; this is
+        // the backstop for any other way of reaching the flow.
+        if (UpdateService.IsDisabledByPolicy()) return;
+
         _ = Task.Run(UpdateService.CleanStaleDownloads);
 
         // A development build with a suffix (for example 2.2.0-rc1) can't be compared with
@@ -87,7 +91,13 @@ public sealed partial class MainWindow
         // Only the installed copy can meaningfully update itself. A portable or development
         // copy would run the installer against some other install and then close, taking
         // away the copy the user was actually using.
-        var canInstall = UpdateService.PathsMatch(AppContext.BaseDirectory, UpdateService.ReadInstallLocation());
+        var candidates = UpdateService.ReadInstallCandidates();
+        var install = UpdateService.PickInstall(candidates, AppContext.BaseDirectory);
+        var canInstall = install is not null;
+        // A per-user install can be updated in place without any prompt, so it goes through
+        // the silent installer and comes back on its own. An install for all users needs
+        // Windows to ask for permission, which only works through the visible installer.
+        var silent = UpdateService.ShouldInstallSilently(candidates, AppContext.BaseDirectory);
 
         var panel = new StackPanel { Spacing = 10, MinWidth = 380 };
         panel.Children.Add(new TextBlock
@@ -97,9 +107,11 @@ public sealed partial class MainWindow
         });
         panel.Children.Add(new TextBlock
         {
-            Text = canInstall
-                ? "To install it, WordMD will download the update from GitHub, check it, then close and open the installer. You'll be asked to save any unsaved changes first."
-                : "This copy of WordMD isn't the installed one (it may be a portable or development copy), so it can't update itself. You can get the new version from the GitHub releases page.",
+            Text = !canInstall
+                ? "This copy of WordMD isn't the installed one (it may be a portable or development copy), so it can't update itself. You can get the new version from the GitHub releases page."
+                : silent
+                    ? "To install it, WordMD will download the update from GitHub, check it, then close, update itself, and reopen. You'll be asked to save any unsaved changes first."
+                    : "To install it, WordMD will download the update from GitHub, check it, then close and open the installer. Windows may ask for permission, because WordMD is (or has also been) installed for all users on this computer. You'll be asked to save any unsaved changes first.",
             TextWrapping = TextWrapping.Wrap,
         });
         if (!string.IsNullOrWhiteSpace(update.Notes))
@@ -157,10 +169,10 @@ public sealed partial class MainWindow
         }
         if (choice != ContentDialogResult.Primary) return;
 
-        await DownloadAndInstallAsync(update);
+        await DownloadAndInstallAsync(update, silent);
     }
 
-    private async Task DownloadAndInstallAsync(UpdateInfo update)
+    private async Task DownloadAndInstallAsync(UpdateInfo update, bool silent)
     {
         using var cts = new CancellationTokenSource();
         var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = 0 };
@@ -246,8 +258,16 @@ public sealed partial class MainWindow
                 return;
             }
 
-            if (!await TryLaunchInstallerAsync(installer.FilePath))
+            // Recorded before the installer starts, so that if the update never finishes (Setup
+            // cancelled, an elevation prompt declined, Setup stopped) the next launch can say so
+            // instead of the app having simply disappeared.
+            // If the folder for the marker and Setup's log is not writable, use the visible
+            // installer: Setup aborts when it cannot create the file named by /LOG.
+            var markerWritten = UpdateService.WriteAttemptMarker(update.Version);
+            silent = silent && markerWritten;
+            if (!await TryLaunchInstallerAsync(installer.FilePath, UpdateService.BuildInstallerArguments(silent), silent))
             {
+                UpdateService.ClearAttemptMarker();
                 var path = installer.FilePath;
                 installer.Dispose();
                 await ShowUpdateProblemAsync("Couldn't start the installer",
@@ -266,6 +286,40 @@ public sealed partial class MainWindow
         {
             installer.DisposeAndDelete();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Run once after startup. If an earlier update attempt never finished (the user cancelled
+    /// Setup, declined an elevation prompt, or Setup was stopped), say so once instead of the
+    /// app having silently stayed on the old version. The marker is cleared only after the
+    /// notice has actually been shown, so a collision with another startup dialog (which makes
+    /// ShowAsync throw, caught here) just means it is tried again next launch.
+    /// </summary>
+    private async Task ShowPreviousUpdateNoticeAsync()
+    {
+        try
+        {
+            if (UpdateService.IsDisabledByPolicy()) return;
+            if (!UpdateService.TryParseReleaseVersion(AppVersion, out var current)) return;
+            // File and process checks, so off the UI thread.
+            var (outcome, target) = await Task.Run(() =>
+            {
+                var o = UpdateService.EvaluateAttemptMarker(current, out var t);
+                return (o, t);
+            });
+            if (outcome != UpdateService.AttemptOutcome.Incomplete || target == null) return;
+
+            await Task.Delay(2000); // let any startup prompt (crash recovery) settle first
+            await ShowUpdateProblemAsync("The last update didn't finish",
+                $"WordMD was updating to v{target.ToString(3)}, but the update didn't finish, so this is still v{AppVersion}. Setup may have been cancelled or stopped.\n\n" +
+                $"You can try again from Help > Check for Updates. If Setup left a log, it is here:\n{UpdateService.LastUpdateLogPath}",
+                null);
+            UpdateService.ClearAttemptMarker();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Update notice failed: {ex}");
         }
     }
 
@@ -291,24 +345,46 @@ public sealed partial class MainWindow
             ex.Code),
     };
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(int dwProcessId);
+
     /// <summary>
-    /// Starts the installer through the shell, showing its normal window. Deliberately not
-    /// silent, so any problem is visible to the user and the finish page's "Launch WordMD"
-    /// option can bring the app back. Note that WordMD exits right after this succeeds, so if
-    /// the user later cancels Setup (or declines an elevation prompt) the app stays closed;
-    /// the only early failure it can catch is Setup dying immediately with an error.
+    /// Starts the installer through the shell. For a per-user install it runs silent (a small
+    /// progress window, errors still shown, a log written) and reopens WordMD itself when it
+    /// finishes; otherwise it shows its normal window, and the finish page's "Launch WordMD"
+    /// option brings the app back. Either way WordMD exits right after this succeeds, so if
+    /// Setup is cancelled or stopped later the app stays closed; the update-attempt marker is
+    /// what lets the next launch report that. The only early failure caught here is Setup
+    /// dying immediately with an error. <paramref name="recordProcess"/> stores the Setup
+    /// process in the marker (silent installs only).
     /// </summary>
-    private static async Task<bool> TryLaunchInstallerAsync(string path)
+    private static async Task<bool> TryLaunchInstallerAsync(string path, string arguments, bool recordProcess)
     {
         try
         {
             using var p = Process.Start(new ProcessStartInfo(path)
             {
+                Arguments = arguments,
                 UseShellExecute = true,
                 // Not the installer's own (user-writable) folder, so nothing planted beside it
                 // is picked up as the working directory.
                 WorkingDirectory = Environment.SystemDirectory,
             });
+            if (p != null)
+            {
+                // This process is about to exit, so Setup would otherwise start without the
+                // right to come to the front and its progress window or an error box could
+                // open behind other windows.
+                try { AllowSetForegroundWindow(p.Id); } catch { }
+                // For the silent installer, remember which process it is so the next launch can
+                // tell "still running" from "gone". (The visible installer may hand off to an
+                // elevated copy and exit, so it keeps the time-based rule.)
+                if (recordProcess)
+                {
+                    try { UpdateService.RecordSetupProcess(p.Id, p.StartTime.ToUniversalTime()); } catch { }
+                }
+            }
             try
             {
                 // Setup stays alive until the user finishes or cancels it. One that is already

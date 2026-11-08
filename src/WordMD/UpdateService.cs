@@ -120,7 +120,8 @@ internal sealed class VerifiedInstaller : IDisposable
 ///   4. Size and the SHA-256 published next to the installer. These come from the same
 ///      release as the installer, so they catch truncation and corruption, not a malicious
 ///      release.
-/// Revocation is not consulted (a conscious choice, see the spec).
+/// Revocation is checked on the whole chain and an explicit "revoked" is a hard failure;
+/// "could not be determined" falls back to the same checks without revocation (soft-fail).
 /// </summary>
 internal static class UpdateService
 {
@@ -247,25 +248,86 @@ internal static class UpdateService
     /// or null if no installation is registered. The AppId in the key name must match
     /// installer\WordMD.iss; it also has to stay constant for in-place upgrades to work at all.
     /// </summary>
-    internal static string? ReadInstallLocation()
+    /// <summary>Where WordMD is installed and whether that install is for all users (HKLM) or just this one (HKCU).</summary>
+    internal readonly record struct InstallInfo(string Location, bool PerMachine);
+
+    /// <summary>Every registered install (per-user and per-machine), in no particular order.</summary>
+    internal static List<InstallInfo> ReadInstallCandidates()
     {
+        var found = new List<InstallInfo>();
         var places = new[]
         {
-            (RegistryHive.CurrentUser, RegistryView.Default),
-            (RegistryHive.LocalMachine, RegistryView.Registry64),
-            (RegistryHive.LocalMachine, RegistryView.Registry32),
+            (RegistryHive.CurrentUser, RegistryView.Default, false),
+            (RegistryHive.LocalMachine, RegistryView.Registry64, true),
+            (RegistryHive.LocalMachine, RegistryView.Registry32, true),
         };
-        foreach (var (hive, view) in places)
+        foreach (var (hive, view, perMachine) in places)
         {
             try
             {
                 using var root = RegistryKey.OpenBaseKey(hive, view);
                 using var key = root.OpenSubKey(InstallerUninstallKey);
-                if (key?.GetValue("InstallLocation") is string s && !string.IsNullOrWhiteSpace(s)) return s;
+                if (key?.GetValue("InstallLocation") is string s && !string.IsNullOrWhiteSpace(s))
+                    found.Add(new InstallInfo(s, perMachine));
             }
             catch { }
         }
-        return null;
+        return found;
+    }
+
+    /// <summary>
+    /// The registered install whose folder is the one this copy is running from, or null if
+    /// this is not an installed copy. When both an all-users and a per-user registration point
+    /// at the same folder, the all-users one wins, so the update goes through the visible
+    /// installer where Windows can ask for permission. Matching by folder (rather than taking
+    /// the first key found) means a stray registration elsewhere cannot make this copy look
+    /// per-user, or hide that it is installed.
+    /// </summary>
+    internal static InstallInfo? PickInstall(IEnumerable<InstallInfo> candidates, string runningDirectory)
+    {
+        InstallInfo? best = null;
+        foreach (var c in candidates)
+        {
+            if (!PathsMatch(runningDirectory, c.Location)) continue;
+            if (c.PerMachine) return c;
+            best ??= c;
+        }
+        return best;
+    }
+
+    internal static InstallInfo? FindInstallFor(string runningDirectory) =>
+        PickInstall(ReadInstallCandidates(), runningDirectory);
+
+    /// <summary>
+    /// True only when the update can run silently with no chance of an elevation prompt: this
+    /// copy is the registered per-user install AND no all-users registration exists anywhere.
+    /// The installer cannot be told which mode to use (it does not accept /CURRENTUSER), and
+    /// when an all-users registration exists Setup may decide on its own to run elevated, which
+    /// from a silent Setup started by an exiting app would be a prompt nobody sees. Any such
+    /// machine gets the visible installer instead.
+    /// </summary>
+    internal static bool ShouldInstallSilently(IReadOnlyCollection<InstallInfo> candidates, string runningDirectory) =>
+        PickInstall(candidates, runningDirectory) is { PerMachine: false } && !candidates.Any(c => c.PerMachine);
+
+    /// <summary>
+    /// Administrators can switch the feature off on managed machines with the DWORD
+    /// <c>DisableUpdateCheck</c> = 1 under <c>HKLM\Software\Policies\WordMD</c> (or the same
+    /// path under HKCU). The menu item is then hidden. Only a real DWORD counts, so a stray
+    /// string value cannot switch it off by accident.
+    /// </summary>
+    internal static bool IsDisabledByPolicy(string policyKeyPath = @"Software\Policies\WordMD")
+    {
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64);
+                using var key = root.OpenSubKey(policyKeyPath);
+                if (key?.GetValue("DisableUpdateCheck") is int v && v != 0) return true;
+            }
+            catch { }
+        }
+        return false;
     }
 
     /// <summary>True when the running folder is the registered install folder.</summary>
@@ -278,6 +340,162 @@ internal static class UpdateService
             return string.Equals(Norm(runningDirectory), Norm(installLocation), StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
+    }
+
+    // ---------------------------------------------------------------- how the installer is started
+
+    /// <summary>
+    /// Setup's log from the most recent update. A fixed file outside the per-attempt folders
+    /// (those are cleaned up) so it is still there when the next launch reports a failed update.
+    /// </summary>
+    internal static string LastUpdateLogPath => Path.Combine(UpdatesRoot, "last-update.log");
+
+    /// <summary>
+    /// The command line for the installer. Silent (progress window only, no questions) is used
+    /// only for a per-user install, where no elevation prompt can appear. It deliberately does
+    /// not pass /SUPPRESSMSGBOXES, so any error Setup hits is still shown to the user, and it
+    /// writes a log. /RELAUNCH=1 is honored by installer\WordMD.iss, which reopens the app once
+    /// the install has finished; /NORESTARTAPPLICATIONS keeps Setup's own restart logic from
+    /// starting a second copy. The visible installer takes no arguments.
+    /// </summary>
+    internal static string BuildInstallerArguments(bool silent) =>
+        silent
+            ? $"/SILENT /NORESTART /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS /RELAUNCH=1 /LOG=\"{LastUpdateLogPath}\""
+            : "";
+
+    // ---------------------------------------------------------------- "did the last update finish?"
+
+    private static string AttemptMarkerPath => Path.Combine(UpdatesRoot, "update-attempt.txt");
+
+    internal enum AttemptOutcome { None, Completed, Pending, Incomplete }
+
+    /// <summary>The marker is a few short lines; anything bigger is not ours and is discarded unread.</summary>
+    private const int MaxMarkerBytes = 512;
+
+    /// <summary>Longest a recorded Setup process is trusted to still be "the update in progress".</summary>
+    private static readonly TimeSpan MaxSetupRunTime = TimeSpan.FromMinutes(60);
+
+    /// <summary>How long an attempt with no recorded Setup process is treated as possibly still running.</summary>
+    private static readonly TimeSpan PendingGrace = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Written just before the installer is started: which version we were heading for, and when.
+    /// Returns false if the folder is not writable (Setup's /LOG would fail there too).
+    /// </summary>
+    internal static bool WriteAttemptMarker(Version target)
+    {
+        try
+        {
+            Directory.CreateDirectory(UpdatesRoot);
+            File.WriteAllText(AttemptMarkerPath, $"target={Dotted(target)}\nutc={DateTime.UtcNow:O}\n");
+            return true;
+        }
+        catch
+        {
+            // Do not leave an older attempt's marker behind to be misread as this one.
+            ClearAttemptMarker();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Adds the started Setup process to the marker, so the next launch can tell "Setup is
+    /// still running" from "Setup is gone and the version did not change" without a clock.
+    /// Best effort: without it the marker falls back to the time-based rule.
+    /// </summary>
+    internal static void RecordSetupProcess(int processId, DateTime startUtc)
+    {
+        try
+        {
+            if (!File.Exists(AttemptMarkerPath)) return;
+            File.AppendAllText(AttemptMarkerPath, $"pid={processId}\nstart={startUtc.ToUniversalTime():O}\n");
+        }
+        catch { }
+    }
+
+    internal static void ClearAttemptMarker()
+    {
+        try { File.Delete(AttemptMarkerPath); } catch { }
+    }
+
+    private static bool SetupProcessRunning(int pid, DateTime startUtc)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById(pid);
+            if (p.HasExited) return false;
+            // The id could have been reused by something else since; the start time settles it.
+            return Math.Abs((p.StartTime.ToUniversalTime() - startUtc).TotalSeconds) <= 5;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Looks at the marker left by an earlier update attempt. If the running version has
+    /// reached the target, the update finished (Completed, marker removed). If not, it did
+    /// not finish (Incomplete: the user cancelled Setup, declined an elevation prompt, or
+    /// Setup was stopped); the caller reports it and then clears the marker, unless Setup may
+    /// still be running (Pending, left alone). With a recorded Setup process, "still running"
+    /// means that process is alive (and younger than an hour); without one, it means the
+    /// attempt is under ten minutes old. <paramref name="setupRunning"/> is a test seam.
+    /// </summary>
+    internal static AttemptOutcome EvaluateAttemptMarker(Version current, out Version? target,
+        Func<int, DateTime, bool>? setupRunning = null, DateTime? nowUtc = null)
+    {
+        target = null;
+        try
+        {
+            var info = new FileInfo(AttemptMarkerPath);
+            if (!info.Exists) return AttemptOutcome.None;
+            if (info.Length > MaxMarkerBytes)
+            {
+                ClearAttemptMarker();
+                return AttemptOutcome.None;
+            }
+
+            string? targetText = null, utcText = null, pidText = null, startText = null;
+            foreach (var line in File.ReadAllLines(AttemptMarkerPath))
+            {
+                if (line.StartsWith("target=", StringComparison.Ordinal)) targetText = line.Substring(7).Trim();
+                else if (line.StartsWith("utc=", StringComparison.Ordinal)) utcText = line.Substring(4).Trim();
+                else if (line.StartsWith("pid=", StringComparison.Ordinal)) pidText = line.Substring(4).Trim();
+                else if (line.StartsWith("start=", StringComparison.Ordinal)) startText = line.Substring(6).Trim();
+            }
+            // RoundtripKind on its own: it cannot be combined with AdjustToUniversal (that throws).
+            if (!TryParseReleaseVersion(targetText, out var parsed)
+                || !DateTime.TryParse(utcText, System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.RoundtripKind, out var when))
+            {
+                ClearAttemptMarker();
+                return AttemptOutcome.None;
+            }
+            var now = nowUtc ?? DateTime.UtcNow;
+            when = when.ToUniversalTime();
+            // A timestamp from the future cannot be ours (the clock was moved, or the file was
+            // edited). A small skew is tolerated; anything beyond that is treated as old, because
+            // clamping it to "now" would keep the attempt Pending on every launch, forever.
+            if (when > now) when = when - now <= TimeSpan.FromMinutes(2) ? now : DateTime.MinValue;
+            target = parsed;
+            if (current >= parsed)
+            {
+                ClearAttemptMarker();
+                return AttemptOutcome.Completed;
+            }
+
+            var age = now - when;
+            if (int.TryParse(pidText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var pid)
+                && DateTime.TryParse(startText, System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.RoundtripKind, out var started))
+            {
+                var alive = (setupRunning ?? SetupProcessRunning)(pid, started.ToUniversalTime());
+                return alive && age < MaxSetupRunTime ? AttemptOutcome.Pending : AttemptOutcome.Incomplete;
+            }
+            return age >= PendingGrace ? AttemptOutcome.Incomplete : AttemptOutcome.Pending;
+        }
+        catch
+        {
+            return AttemptOutcome.None;
+        }
     }
 
     // ---------------------------------------------------------------- the check
@@ -711,8 +929,22 @@ internal static class UpdateService
     /// </summary>
     internal static void VerifyAuthenticode(string path)
     {
-        var rc = WinVerifyTrustFile(path);
-        if (rc != 0)
+        // Revocation is checked on the whole chain, but only an explicit "revoked" answer is a
+        // hard failure. If revocation simply cannot be determined (offline, a blocked or slow
+        // certificate server), the same file is verified again WITHOUT the revocation step,
+        // which is exactly the check this updater used before revocation was added, so the
+        // soft failure can never accept anything the strict path would not have, other than a
+        // certificate whose revocation status is unknown.
+        var rc = WinVerifyTrustFile(path, checkRevocation: true);
+        var outcome = ClassifyTrustResult(rc);
+        if (outcome == TrustOutcome.Revoked)
+            throw new UpdateVerificationException("The installer's signing certificate has been revoked.", "revoked");
+        if (outcome == TrustOutcome.RevocationUnknown)
+        {
+            rc = WinVerifyTrustFile(path, checkRevocation: false);
+            outcome = ClassifyTrustResult(rc);
+        }
+        if (outcome != TrustOutcome.Trusted)
             throw new UpdateVerificationException("The installer's digital signature couldn't be confirmed.", $"signature-0x{rc:X8}");
 
         X509Certificate2 cert;
@@ -732,6 +964,20 @@ internal static class UpdateService
                 throw new UpdateVerificationException("The installer isn't signed by ReboundMan.com LLC.", "signer");
         }
     }
+
+    /// <summary>The raw WinVerifyTrust result for a file, with or without the revocation step. For diagnostics and tests.</summary>
+    internal static int TrustResultFor(string path, bool checkRevocation) => WinVerifyTrustFile(path, checkRevocation);
+
+    internal enum TrustOutcome { Trusted, Revoked, RevocationUnknown, Failed }
+
+    /// <summary>Sorts a WinVerifyTrust result into trusted, explicitly revoked, "revocation could not be determined", or anything else.</summary>
+    internal static TrustOutcome ClassifyTrustResult(int rc) => unchecked((uint)rc) switch
+    {
+        0 => TrustOutcome.Trusted,
+        0x800B010C or 0x80092010 => TrustOutcome.Revoked,                          // CERT_E_REVOKED, CRYPT_E_REVOKED
+        0x80092012 or 0x80092013 or 0x800B010E => TrustOutcome.RevocationUnknown,  // no check possible, server offline, check failed
+        _ => TrustOutcome.Failed,
+    };
 
     internal static bool SignerMatches(X509Certificate2 cert, SignerPin pin)
     {
@@ -782,6 +1028,7 @@ internal static class UpdateService
     private static readonly Guid WintrustActionGenericVerifyV2 = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
     private const uint WTD_UI_NONE = 2;
     private const uint WTD_REVOKE_NONE = 0;
+    private const uint WTD_REVOKE_WHOLECHAIN = 1;
     private const uint WTD_CHOICE_FILE = 1;
     private const uint WTD_STATEACTION_VERIFY = 1;
     private const uint WTD_STATEACTION_CLOSE = 2;
@@ -818,7 +1065,7 @@ internal static class UpdateService
     [DllImport("wintrust.dll", ExactSpelling = true)]
     private static extern int WinVerifyTrust(IntPtr hwnd, ref Guid pgActionID, ref WINTRUST_DATA pWVTData);
 
-    private static int WinVerifyTrustFile(string path)
+    private static int WinVerifyTrustFile(string path, bool checkRevocation)
     {
         var pathPtr = Marshal.StringToHGlobalUni(path);
         var filePtr = Marshal.AllocHGlobal(Marshal.SizeOf<WINTRUST_FILE_INFO>());
@@ -834,11 +1081,11 @@ internal static class UpdateService
             {
                 cbStruct = (uint)Marshal.SizeOf<WINTRUST_DATA>(),
                 dwUIChoice = WTD_UI_NONE,
-                fdwRevocationChecks = WTD_REVOKE_NONE,
+                fdwRevocationChecks = checkRevocation ? WTD_REVOKE_WHOLECHAIN : WTD_REVOKE_NONE,
                 dwUnionChoice = WTD_CHOICE_FILE,
                 pFile = filePtr,
                 dwStateAction = WTD_STATEACTION_VERIFY,
-                dwProvFlags = WTD_REVOCATION_CHECK_NONE,
+                dwProvFlags = checkRevocation ? 0u : WTD_REVOCATION_CHECK_NONE,
             };
             var action = WintrustActionGenericVerifyV2;
             var rc = WinVerifyTrust(InvalidHandleValue, ref action, ref data);

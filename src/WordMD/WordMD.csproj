@@ -91,7 +91,10 @@
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+    <!-- Trimming stays off in every configuration (see the PropertyGroup above). This used to
+         turn it ON for non-Debug builds, which only the release script's explicit
+         -p:PublishTrimmed=false was overriding; a Visual Studio publish profile would have
+         trimmed WinUI and broken the app at runtime. -->
+    <PublishTrimmed>False</PublishTrimmed>
   </PropertyGroup>
 </Project>

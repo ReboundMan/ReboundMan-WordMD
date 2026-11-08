@@ -49,6 +49,8 @@ dotnet publish 'src\WordMD\WordMD.csproj' -c Release -r win-x64 -p:WindowsAppSDK
 
 `.github\workflows\ci.yml` runs on Windows, restores Node and .NET dependencies, builds the web bundle, and builds the WinUI project with the already-built web bundle.
 
+Two more workflows fire when a release is published: `release.yml` (tag matches `VERSION`, the build chain still compiles) and `release-contract.yml` (the published release meets the in-app updater contract; see below). A workflow only triggers for a tag if the tagged commit contains the workflow file, so cut release tags from a commit that has both.
+
 ## Release checklist
 
 1. Bump `VERSION`; the installer and app binary both read it at build.
@@ -73,6 +75,8 @@ dotnet publish 'src\WordMD\WordMD.csproj' -c Release -r win-x64 -p:WindowsAppSDK
    gh release upload v<version> "dist\WordMD-Setup-<version>.exe" "dist\WordMD-Setup-<version>.exe.sha256" --clobber
    gh release edit v<version> --draft=false --latest
    ```
+   Then run the contract check yourself before walking away: `.\tools\verify-release-contract.ps1 -Tag v<version>` (the same script CI runs; it needs `gh`). It cannot look at a draft (GitHub's tag lookup skips drafts), so this is the earliest it can run; a failure is still fixable in place with `gh release upload --clobber` / `gh release edit`, unless the repository has immutable releases switched on, in which case it needs a new patch version.
+
    The tag must be exactly `v` + the contents of `VERSION` (so `VERSION` of `2.0.0` needs tag `v2.0.0`, not `v2.0`); the validation workflow fails the check otherwise. The release *title* is free text.
 
    That `Release build validation` workflow runs on publish. It confirms the tag matches `VERSION`, re-runs this same script with `-SkipSigning` to prove the chain still builds, and warns if no signed installer is attached. It deliberately attaches nothing itself: CI holds no signing credential, so it could only ever produce an unsigned installer. The shipped artifact always comes from step 3.
@@ -89,6 +93,8 @@ Help > Check for Updates (`spec\features\check-for-updates.md`) finds and instal
 - The installer's own `ProductName` (`WordMD`) and `ProductVersion` (set by Inno from `AppVersion`, so from `VERSION`) must equal the announced release. The updater reads them from the signed file and refuses a mismatch, which is what stops an older signed installer from being passed off as a newer release. Don't set `VersionInfoProductVersion` or `AppVersion` in `WordMD.iss` to anything but the `VERSION` file's contents.
 - `AppId` in `WordMD.iss` is also how the updater recognizes the installed copy (it reads Inno's uninstall registry key for it). It has to stay constant anyway for in-place upgrades to work.
 - Marking an older release as Latest makes the updater tell anyone already on a newer version that they are up to date. It never moves anyone backwards. See Rollback below.
+- **The installer must keep honoring `/RELAUNCH=1`.** For a per-user install the updater starts the installer with `/SILENT /NORESTART /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS /RELAUNCH=1 /LOG=...` and then exits; the app comes back because `WordMD.iss` has a post-install `[Run]` entry guarded by `Check: RelaunchRequested` (a `[Code]` function reading `{param:RELAUNCH|0}`). If that entry is removed or renamed, silent updates still install but the app does not reopen. The entry has `skipifnotsilent`, so it never appears in the normal wizard; a silent install without `/RELAUNCH=1` (a deployment script) behaves as it always did and does not start the app.
+- **CI enforces all of this.** `.github/workflows/release-contract.yml` runs `tools\verify-release-contract.ps1` after every published release and fails the run (it emails you) if any rule above is broken. It also runs by hand: Actions > Release contract > Run workflow, with the tag (tick `allow_not_latest` for an older tag that is no longer Latest). The checker script always comes from the default branch and the tag's own source is checked out beside it, so a manual run works for any tag that has the updater in its source; for older tags (no `AcceptedSigners`) it fails on the signer rule by design. The same script runs locally: `.\tools\verify-release-contract.ps1 -Tag v2.1.0`. It cannot stop a release that is already published, only make the problem loud. It also checks that `UpdateService.cs` still passes `/RELAUNCH=1` and that `WordMD.iss` still reads it, because renaming either side would silently stop updates from reopening the app. Text it quotes from the release (asset names, checksum contents) is sanitized before it reaches the log or the run summary. It checks the signer against the pins in **this release's** source, so when rotating the signing identity also check the new installer by hand against the *previous* release's `AcceptedSigners`, which is what already-installed copies trust.
 - The updater only follows redirects to GitHub's release-asset hosts (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`, `github-releases.githubusercontent.com`). If GitHub moves downloads to a new host, users see a "redirect-host" error with the releases page as the fallback until `AllowedHosts` in `UpdateService.cs` is updated.
 
 ### Code signing
@@ -111,12 +117,19 @@ Signing is local-only by decision, so no credential lives in GitHub Actions. Set
 
 Artifact Signing certificates are valid for only **three days**, so the timestamp (`/tr http://timestamp.acs.microsoft.com`) is not optional: without it the installer would stop validating three days after signing. The script always passes it and refuses to accept an untimestamped signature.
 
+### Managed computers
+
+- **Silent installs.** `WordMD-Setup-<version>.exe /VERYSILENT /NORESTART` installs for the account that runs it, with no prompts, and does not start the app. Add `/RELAUNCH=1` to start WordMD when the install finishes (this is what the in-app updater does). **Not supported yet: an all-users install pushed from a SYSTEM-context tool (Intune, SCCM).** The installer allows only the wizard's own "for me / for all users" choice (`PrivilegesRequiredOverridesAllowed=dialog`), so as far as Inno's documentation says, `/ALLUSERS` is not honored and a SYSTEM-context run would install into SYSTEM's profile. Doing it properly means adding `commandline` to that setting, which is an installer-identity change; it is on the punchlist, not done.
+- **Where updates leave traces** (for support). `%LOCALAPPDATA%\WordMD\updates\last-update.log` is Setup's log from the most recent silent update; `update-attempt.txt` in the same folder is the marker that lets the next launch say "The last update didn't finish". Downloaded installers sit in per-attempt subfolders there and are removed on the next launch. All of it is local.
+- **Switching the in-app updater off.** Set the DWORD `DisableUpdateCheck` to `1` under `HKEY_LOCAL_MACHINE\Software\Policies\WordMD` (Group Policy preferences or a deployment script). The Help > Check for Updates item is then hidden. The same value under `HKEY_CURRENT_USER\Software\Policies\WordMD` also works, but Windows keeps that key write-protected for standard users, so in practice it is an administrator setting. Only a real DWORD counts; a string `"1"` does not.
+
 ## Smoke test
 
 - [ ] Confirm the **installer's** signature: right-click `dist\WordMD-Setup-<version>.exe` → Properties → Digital Signatures, expecting `ReboundMan.com LLC`.
 - [ ] Confirm the **installed app's** signature after install: `signtool verify /pa "%LOCALAPPDATA%\Programs\WordMD\WordMD.exe"`. This is a separate check on purpose; verifying only the installer is exactly the gap that lets an unsigned inner exe ship.
 - [ ] Confirm SmartScreen no longer shows "Windows protected your PC" on a clean profile.
 - [ ] From the **previous** release, run Help > Check for Updates and confirm it offers this one. A release that breaks the in-app updater contract above is otherwise just silently never offered.
+- [ ] On a **disposable** machine or VM (never one whose WordMD holds real work: the real installer upgrades the real install), run that update on a per-user install of the previous release and confirm: a small progress window, WordMD reopens once and comes to the front, the file association and shortcuts you had are kept, and the version in Help > About is the new one. Also try cancelling Setup's progress window and confirm the next launch says the update didn't finish.
 - [ ] Install without admin rights.
 - [ ] Launch WordMD from the Start menu.
 - [ ] Open, edit, and save a Markdown file.

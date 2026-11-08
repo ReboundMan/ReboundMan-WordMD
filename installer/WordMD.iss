@@ -101,3 +101,19 @@ Root: HKA; Subkey: "Software\Classes\.markdown\OpenWithProgids"; ValueType: stri
 ;            "More info > Run anyway" on the SmartScreen prompt) so the launched app inherits
 ;            the original interactive user's token.
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch WordMD"; Flags: nowait postinstall skipifsilent shellexec runasoriginaluser
+
+; In-app silent update (Help > Check for Updates): the app starts this installer with
+; /SILENT ... /RELAUNCH=1 and then exits, so there is no finish page to tick "Launch WordMD"
+; on. skipifnotsilent keeps this entry out of the normal wizard entirely, and the Check
+; makes it opt-in: a silent install run by anything else (a deployment script) does not
+; start the app unless it passes /RELAUNCH=1. By the time post-install entries run, the old
+; process has long since exited (Setup needed its files), so the relaunch cannot collide
+; with the single-instance check.
+Filename: "{app}\{#MyAppExeName}"; Description: "Relaunch WordMD after an in-app update"; Flags: nowait postinstall skipifnotsilent shellexec runasoriginaluser; Check: RelaunchRequested
+
+[Code]
+{ True only when the installer was started with /RELAUNCH=1 (the in-app updater does this). }
+function RelaunchRequested: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;

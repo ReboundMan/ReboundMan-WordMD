@@ -1,0 +1,74 @@
+name: Release contract
+
+# Fails (it does not just warn) when a published release breaks the contract the in-app
+# updater (Help > Check for Updates) depends on: strict vX.Y.Z tag, published and marked
+# Latest, WordMD-Setup-<ver>.exe plus a correctly formatted .sha256, a valid timestamped
+# signature from an accepted signer, and an installer whose own signed version matches the
+# tag. A release that breaks any of these is never unsafe, it is just silently never offered,
+# which is easy to miss. Rules and rationale: spec\DEPLOY.md, "In-app updater contract".
+#
+# It runs after publishing, so it cannot stop a release; it makes the problem loud (a red
+# run and an email) instead of invisible. It is deliberately separate from release.yml so it
+# is fast and can also be run by hand against any tag: Actions > Release contract > Run
+# workflow. For an older tag that is no longer Latest, tick "allow_not_latest".
+#
+# All the logic lives in tools\verify-release-contract.ps1 so it can be run and tested
+# locally; this file only checks out the script and the tag and calls it. Cut release tags
+# from a commit that contains this workflow file, or the release event will not trigger it.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to check, for example v2.1.0'
+        required: true
+        type: string
+      allow_not_latest:
+        description: 'Do not fail because the release is not the one marked Latest'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: windows-latest
+    steps:
+      # Two checkouts. The checker script always comes from the default branch, so a manual
+      # run against an older tag (which has no such script) still works. The tag's own source
+      # is checked out separately, so VERSION, installer\WordMD.iss and the signer pins in
+      # UpdateService.cs are the ones that release shipped with. The explicit refs/tags/ form
+      # means a branch that happens to share the tag's name cannot be picked up instead.
+      - name: Check out the checker script (default branch)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: checker
+
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+          path: release-src
+
+      # Tag and flags arrive via env, not `${{ }}` interpolation into the script body:
+      # release names are attacker-influencable text and interpolation splices them straight
+      # into the shell.
+      - name: Verify the release meets the in-app updater contract
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ALLOW_NOT_LATEST: ${{ inputs.allow_not_latest }}
+          REPO: ${{ github.repository }}
+        run: |
+          # A hashtable splat binds by parameter name. (An array splat would pass '-Tag' as a
+          # literal positional value and every run would fail.)
+          $contractArgs = @{ Tag = $env:RELEASE_TAG; Repo = $env:REPO; RepoRoot = (Resolve-Path 'release-src').Path }
+          if ($env:ALLOW_NOT_LATEST -eq 'true') { $contractArgs['AllowNotLatest'] = $true }
+          & .\checker\tools\verify-release-contract.ps1 @contractArgs
+          exit $LASTEXITCODE

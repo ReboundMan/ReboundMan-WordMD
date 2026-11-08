@@ -68,6 +68,10 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon("Assets/AppIcon.ico");
         StatusVersion.Text = "v" + AppVersion;
 
+        // Administrators can switch the updater off (HKLM\Software\Policies\WordMD, DWORD
+        // DisableUpdateCheck = 1); the menu item then isn't shown at all.
+        if (UpdateService.IsDisabledByPolicy()) CheckForUpdatesMenuItem.Visibility = Visibility.Collapsed;
+
         _settings.Load();
         _telemetry = new TelemetryService(_settings);
         TelemetryMenuItem.IsChecked = _settings.TelemetryOptIn;
@@ -231,28 +235,43 @@ public sealed partial class MainWindow : Window
                     UpdatePrintMenuLabel();
                     DispatcherQueue.TryEnqueue(async () =>
                     {
-                        if (!string.IsNullOrEmpty(_pendingStartupFilePath))
+                        // An async lambda handed to TryEnqueue is async void: anything that
+                        // escapes it (for example the error dialog for a locked startup file
+                        // failing because another dialog is already open) has nowhere to go
+                        // and ends the process. Startup must never be able to do that.
+                        try
                         {
-                            var p = _pendingStartupFilePath;
-                            _pendingStartupFilePath = null;
-                            await OpenFileInNewTabAsync(p);
+                            if (!string.IsNullOrEmpty(_pendingStartupFilePath))
+                            {
+                                var p = _pendingStartupFilePath;
+                                _pendingStartupFilePath = null;
+                                await OpenFileInNewTabAsync(p);
+                            }
+                            else
+                            {
+                                NewBlankTab();
+                                if (_recovery.HasRecovery())
+                                    _ = MaybeRestoreRecoveryAsync();
+                            }
+
+                            // Drain any external-open requests that arrived while
+                            // the editor was still initializing.
+                            if (_pendingExternalFiles.Count > 0)
+                            {
+                                var queued = _pendingExternalFiles.ToList();
+                                _pendingExternalFiles.Clear();
+                                foreach (var ext in queued)
+                                    await OpenFileFromExternalAsync(ext);
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            NewBlankTab();
-                            if (_recovery.HasRecovery())
-                                _ = MaybeRestoreRecoveryAsync();
+                            System.Diagnostics.Debug.WriteLine($"Startup open failed: {ex}");
+                            // Never leave the window with no tab at all.
+                            try { if (_tabs.Count == 0) NewBlankTab(); } catch { }
                         }
 
-                        // Drain any external-open requests that arrived while
-                        // the editor was still initializing.
-                        if (_pendingExternalFiles.Count > 0)
-                        {
-                            var queued = _pendingExternalFiles.ToList();
-                            _pendingExternalFiles.Clear();
-                            foreach (var ext in queued)
-                                await OpenFileFromExternalAsync(ext);
-                        }
+                        _ = ShowPreviousUpdateNoticeAsync();
                     });
                     break;
                 case "documentDirty":
@@ -518,7 +537,7 @@ public sealed partial class MainWindow : Window
             if (r == ContentDialogResult.None) return;
             if (r == ContentDialogResult.Primary)
             {
-                if (!await SaveAsync(false)) return;
+                if (!await SaveTabForCloseAsync(tab)) return;
             }
         }
         // Remove from model + view
@@ -852,20 +871,50 @@ public sealed partial class MainWindow : Window
         return true;
     }
 
+    /// <summary>
+    /// Saves <paramref name="tab"/> on behalf of an "unsaved changes" prompt (close tab, exit,
+    /// update) and reports whether it is safe to carry on and discard the in-memory copy.
+    /// Two things make a plain SaveAsync call unsafe here. SaveAsync saves whichever tab is
+    /// active when it starts, and the active tab can change while the prompt is open (a file
+    /// opened from Explorer, say), so the tab is selected again first. And SaveAsync reports
+    /// success when the write itself worked even if another program wrote the file in the same
+    /// instant; it then leaves the tab dirty and flagged (ExternallyChanged) and raises its own
+    /// "file changed during save" prompt. That is not "saved": carrying on would close the tab
+    /// or the app out from under that prompt and lose the user's version, so it counts as
+    /// cancelled and the user resolves the conflict first.
+    /// </summary>
+    private async Task<bool> SaveTabForCloseAsync(TabModel tab)
+    {
+        if (!_tabs.Contains(tab)) return true; // already gone, nothing left to save
+        if (tab != _activeTab)
+        {
+            _suppressTabSelection = true;
+            DocTabs.SelectedItem = tab.View;
+            _suppressTabSelection = false;
+            SwitchToTab(tab);
+        }
+        var saved = await SaveAsync(false);
+        return saved && !tab.ExternallyChanged;
+    }
+
     private async Task<bool> ConfirmDiscardAsync()
     {
         if (_activeTab == null || !_activeTab.IsDirty) return true;
+        var tab = _activeTab;
         var dlg = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot,
             Title = "Unsaved changes",
-            Content = $"\"{_activeTab.DisplayName}\" has unsaved changes. Save before continuing?",
+            Content = $"\"{tab.DisplayName}\" has unsaved changes. Save before continuing?",
             PrimaryButtonText = "Save",
             SecondaryButtonText = "Discard",
             CloseButtonText = "Cancel"
         };
         var result = await dlg.ShowAsync();
-        if (result == ContentDialogResult.Primary) return await SaveAsync(false);
+        if (result == ContentDialogResult.Primary)
+        {
+            return await SaveTabForCloseAsync(tab);
+        }
         if (result == ContentDialogResult.Secondary) return true;
         return false;
     }
