@@ -77,6 +77,20 @@ dotnet publish 'src\WordMD\WordMD.csproj' -c Release -r win-x64 -p:WindowsAppSDK
 
    That `Release build validation` workflow runs on publish. It confirms the tag matches `VERSION`, re-runs this same script with `-SkipSigning` to prove the chain still builds, and warns if no signed installer is attached. It deliberately attaches nothing itself: CI holds no signing credential, so it could only ever produce an unsigned installer. The shipped artifact always comes from step 3.
 
+### In-app updater contract
+
+Help > Check for Updates (`spec\features\check-for-updates.md`) finds and installs releases with no server of its own, so it depends on each release being shaped exactly like this. A release that deviates is never unsafe; it is just never offered (or fails with a message), which makes the mistake easy to miss. Keep all of these:
+
+- The tag is `v` plus the contents of `VERSION`, strictly `MAJOR.MINOR.PATCH`. No `-rc1` suffix, no fourth part.
+- The release is published, not a draft, not marked pre-release, and is the one GitHub shows as **Latest** (the updater reads `releases/latest`).
+- It carries two assets with exactly these names, uploaded before publishing (the draft-first order above already does this): `WordMD-Setup-<version>.exe` and `WordMD-Setup-<version>.exe.sha256`. `-UNSIGNED` files are never matched.
+- The `.sha256` is `<64 hex>  <installer file name>`, which is what `build-signed-release.ps1` writes.
+- The installer has a valid, timestamped signature from an entry in `UpdateService.AcceptedSigners`: the common name `ReboundMan.com LLC`, issued by `O=Microsoft Corporation`, carrying the Artifact Signing account's identity EKU (`1.3.6.1.4.1.311.97.84717075.176126319.764670622.315378995`). The issuing CA's own name is not pinned, because Microsoft rotates those. **If the signing identity, the legal name, or the Artifact Signing identity validation ever changes, copies already installed will refuse updates signed under the new identity.** To rotate safely, add the new entry to `AcceptedSigners` and ship that release still signed by the old identity; only after it is out should signing switch.
+- The installer's own `ProductName` (`WordMD`) and `ProductVersion` (set by Inno from `AppVersion`, so from `VERSION`) must equal the announced release. The updater reads them from the signed file and refuses a mismatch, which is what stops an older signed installer from being passed off as a newer release. Don't set `VersionInfoProductVersion` or `AppVersion` in `WordMD.iss` to anything but the `VERSION` file's contents.
+- `AppId` in `WordMD.iss` is also how the updater recognizes the installed copy (it reads Inno's uninstall registry key for it). It has to stay constant anyway for in-place upgrades to work.
+- Marking an older release as Latest makes the updater tell anyone already on a newer version that they are up to date. It never moves anyone backwards. See Rollback below.
+- The updater only follows redirects to GitHub's release-asset hosts (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`, `github-releases.githubusercontent.com`). If GitHub moves downloads to a new host, users see a "redirect-host" error with the releases page as the fallback until `AllowedHosts` in `UpdateService.cs` is updated.
+
 ### Code signing
 
 Releases are signed with Azure Artifact Signing under a Public Trust certificate profile, so the published identity reads `ReboundMan.com LLC`. The full setup walkthrough, the specific account and profile values, and the traps hit while getting there live in `spec\features\decide-code-signing-path-for-the-windows-installer.md` (spec 10024).
@@ -102,6 +116,7 @@ Artifact Signing certificates are valid for only **three days**, so the timestam
 - [ ] Confirm the **installer's** signature: right-click `dist\WordMD-Setup-<version>.exe` → Properties → Digital Signatures, expecting `ReboundMan.com LLC`.
 - [ ] Confirm the **installed app's** signature after install: `signtool verify /pa "%LOCALAPPDATA%\Programs\WordMD\WordMD.exe"`. This is a separate check on purpose; verifying only the installer is exactly the gap that lets an unsigned inner exe ship.
 - [ ] Confirm SmartScreen no longer shows "Windows protected your PC" on a clean profile.
+- [ ] From the **previous** release, run Help > Check for Updates and confirm it offers this one. A release that breaks the in-app updater contract above is otherwise just silently never offered.
 - [ ] Install without admin rights.
 - [ ] Launch WordMD from the Start menu.
 - [ ] Open, edit, and save a Markdown file.
@@ -112,7 +127,9 @@ Artifact Signing certificates are valid for only **three days**, so the timestam
 
 ## Rollback
 
-WordMD is distributed by GitHub release. To roll back, mark the previous known-good release as latest or direct users to install the earlier installer. User settings and recovery files are not removed by uninstall.
+WordMD is distributed by GitHub release. **Roll forward, don't roll back.** Because Help > Check for Updates never moves anyone to an older version, marking the previous release as Latest does nothing for people who have already updated to the bad one (it just tells them they are up to date). Cut a new patch release containing the fix or the revert instead; everyone on the bad build is offered it.
+
+Marking the previous known-good release as Latest, or pointing people at the earlier installer, still helps people who have not updated yet and anyone installing fresh. User settings and recovery files are not removed by uninstall.
 
 ## Cost notes
 

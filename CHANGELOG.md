@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Help > Check for Updates... finds the latest WordMD release on GitHub and, if it is newer, downloads and installs it. It only runs when you click it (nothing checks in the background). Before anything runs, the download is verified against its published size and SHA-256 checksum, its digital signature (which must come from ReboundMan.com LLC), and the version the installer itself declares, so an older installer cannot be passed off as a newer release; a download that fails any check is deleted and never run. WordMD asks you to save unsaved work, closes, and opens the normal installer. Only the installed copy can update itself; a portable or development copy is pointed at the releases page. This is the first time WordMD makes a network request of its own; it only talks to GitHub. Design, threat model, and verification: `spec/features/check-for-updates.md`.
+
 ## [2.1.0] - 2026-09-11
 
 ### Added

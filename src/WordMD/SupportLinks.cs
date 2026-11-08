@@ -6,6 +6,7 @@ namespace WordMD;
 internal static class SupportLinks
 {
     public const string GitHub = "https://github.com/ReboundMan/ReboundMan-WordMD";
+    public const string ReleasesPage = "https://github.com/ReboundMan/ReboundMan-WordMD/releases/latest";
     public const string ProductPage = "https://reboundman.com/wordmd.html";
 
     /// <summary>

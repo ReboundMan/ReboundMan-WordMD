@@ -98,6 +98,8 @@ public sealed partial class MainWindow : Window
 
         _ = InitializeWebViewAsync();
         StartAutosaveTimer();
+        // Local file deletion only (no network): clears installers left behind by earlier updates.
+        _ = Task.Run(UpdateService.CleanStaleDownloads);
         UpdateRecentFilesMenu();
         UpdateTitle();
 
@@ -821,7 +823,18 @@ public sealed partial class MainWindow : Window
 
     private async void MenuExit_Click(object sender, RoutedEventArgs e)
     {
-        // Confirm any dirty tab before exit
+        if (!await ConfirmAllDirtyTabsAsync()) return;
+        Application.Current.Exit();
+    }
+
+    /// <summary>
+    /// Walks every tab with unsaved changes, bringing each to the front and asking to
+    /// save or discard it. Returns false if the user cancels at any prompt, meaning the
+    /// caller must NOT go on to close the app. Shared by Exit and by the update flow,
+    /// which also closes the app.
+    /// </summary>
+    private async Task<bool> ConfirmAllDirtyTabsAsync()
+    {
         foreach (var t in _tabs.ToList())
         {
             if (t.IsDirty)
@@ -833,10 +846,10 @@ public sealed partial class MainWindow : Window
                     _suppressTabSelection = false;
                     SwitchToTab(t);
                 }
-                if (!await ConfirmDiscardAsync()) return;
+                if (!await ConfirmDiscardAsync()) return false;
             }
         }
-        Application.Current.Exit();
+        return true;
     }
 
     private async Task<bool> ConfirmDiscardAsync()

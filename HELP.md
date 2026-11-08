@@ -89,6 +89,20 @@ Picks the alignment algorithm used while Sync Scrolling is on. **Both algorithms
 
 ---
 
+## Updates
+
+**Help → Check for Updates…** looks for a newer release of WordMD on GitHub. It only runs when you click it; WordMD never checks in the background.
+
+- If you are up to date, it says so. If a newer version exists, you see what changed and can choose **Download and install**.
+- WordMD downloads the installer from the official GitHub releases page and checks it before running anything: the file size, a checksum published with the release, the digital signature, which must be from ReboundMan.com LLC, and that the installer is the version the release announced. If any check fails, the file is deleted and not run.
+- To install, WordMD asks you to save any unsaved changes, closes, and opens the normal installer window. Leave **Launch WordMD** checked on the last page to reopen the app. If you cancel the installer, WordMD stays closed; just start it again.
+- Only the installed copy of WordMD can update itself. A portable or development copy offers the releases page instead.
+- **View release notes** opens the release on GitHub instead, if you would rather download it yourself.
+
+WordMD only talks to GitHub: the check itself, and, only if you choose Download and install, the download. GitHub sees your IP address and the WordMD version in the request, the same as visiting the page in a browser. No document content, file paths, or usage data are sent. Separately, Windows itself may contact Microsoft to validate the installer's signature certificate, as it does for any signed program.
+
+---
+
 ## Keyboard cheat sheet
 
 | Action | Shortcut |

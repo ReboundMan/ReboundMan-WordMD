@@ -153,6 +153,7 @@
                 <MenuFlyoutItem Text="Open Telemetry Log Folder" Click="MenuOpenTelemetryFolder_Click" />
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="View on GitHub" Click="MenuGitHub_Click" />
+                <MenuFlyoutItem Text="Check for Updates..." Click="MenuCheckForUpdates_Click" />
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="About WordMD" Click="MenuAbout_Click" />
             </MenuBarItem>
