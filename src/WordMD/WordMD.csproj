@@ -39,7 +39,10 @@
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Assets\Square44x44Logo.targetsize-48_altform-lightunplated.png" />
     <Content Include="Assets\StoreLogo.png" />
-    <Content Include="Assets\AppIcon.ico" />
+    <!-- The window's runtime icon (MainWindow: AppWindow.SetIcon), which is what Alt-Tab
+         shows. Without an explicit copy setting it reached bin\ on a build but NOT the
+         publish folder the installer packages, so installed copies had no icon file. -->
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
   </ItemGroup>
 

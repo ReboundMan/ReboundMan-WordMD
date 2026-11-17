@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Alt-Tab showed the generic Windows program icon instead of WordMD's. The window icon file was never copied into the installed app (the project only copied it into development builds), so the app had nothing to load and Windows fell back to its default; the taskbar and Start menu looked right because they use the icon built into `WordMD.exe`. The installer now ships the file and the app loads it by absolute path. The 2.0.0 entry below lists this as fixed, but that change was never merged.
+
 ## [2.2.0] - 2026-11-08
 
 ### Added

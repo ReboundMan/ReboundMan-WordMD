@@ -65,7 +65,13 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        // The runtime window icon is what Alt-Tab shows (the taskbar and Start use the icon
+        // embedded in the exe, so they looked right even when this failed). SetIcon reports
+        // nothing when the file is missing, so: an absolute path, because this unpackaged app's
+        // working directory depends on how it was launched, and the file must be in the
+        // publish output (see WordMD.csproj).
+        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico")); }
+        catch { /* cosmetic; never block startup over an icon */ }
         StatusVersion.Text = "v" + AppVersion;
 
         // Administrators can switch the updater off (HKLM\Software\Policies\WordMD, DWORD
